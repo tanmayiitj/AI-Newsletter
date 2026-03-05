@@ -1,0 +1,83 @@
+/* Responsive media queries — mobile, tablet, desktop */
+
+/* Mobile (320px+) — base styles are mobile-first */
+@media (max-width: 767px) {
+    .edition-headline {
+        font-size: 1.75rem;
+    }
+
+    .executive-summary {
+        font-size: 1rem;
+    }
+
+    .newsletter-section {
+        padding: var(--spacing-md);
+    }
+
+    .section-title {
+        font-size: 1.35rem;
+    }
+
+    .content-meta {
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+
+    .job-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-xs);
+    }
+
+    .header-container {
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+
+    .main-content {
+        padding: var(--spacing-md) var(--spacing-sm);
+    }
+}
+
+/* Tablet (768px+) */
+@media (min-width: 768px) {
+    .edition-headline {
+        font-size: 2.25rem;
+    }
+
+    .newsletter-section {
+        padding: var(--spacing-lg);
+    }
+}
+
+/* Desktop (1280px+) */
+@media (min-width: 1280px) {
+    .edition-headline {
+        font-size: 2.75rem;
+    }
+
+    .main-content {
+        padding: var(--spacing-xl) var(--spacing-md);
+    }
+
+    .newsletter-sections {
+        gap: var(--spacing-xl);
+    }
+}
+
+/* Print styles */
+@media print {
+    .site-header, .site-footer, .share-button {
+        display: none;
+    }
+
+    .newsletter-section {
+        break-inside: avoid;
+        border: none;
+        padding: 0;
+    }
+
+    .newsletter-section::before {
+        display: none;
+    }
+}

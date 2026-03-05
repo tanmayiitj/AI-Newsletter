@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}AI Pulse Newsletter — Archive{% endblock %}
+
+{% block content %}
+<div class="archive-page">
+    <header class="archive-header">
+        <h1>Newsletter Archive</h1>
+        <p class="text-light">Browse past editions of AI Pulse.</p>
+    </header>
+
+    {% if archive.editions %}
+    <div class="archive-list">
+        {% for edition in archive.editions %}
+        <a href="/edition/{{ edition.id }}" class="archive-item">
+            <h2 class="archive-item-title">{{ edition.headline }}</h2>
+            <p class="archive-item-summary">{{ edition.executive_summary[:200] }}{% if edition.executive_summary|length > 200 %}...{% endif %}</p>
+            <p class="archive-item-meta">Edition #{{ edition.edition_number }} &middot; {{ edition.created_at.strftime('%B %d, %Y') }}</p>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if archive.total_pages > 1 %}
+    <nav class="pagination" aria-label="Archive pagination">
+        {% if archive.page > 1 %}
+        <a href="/archive?page={{ archive.page - 1 }}">&laquo; Previous</a>
+        {% endif %}
+
+        {% for p in range(1, archive.total_pages + 1) %}
+            {% if p == archive.page %}
+            <span class="active">{{ p }}</span>
+            {% else %}
+            <a href="/archive?page={{ p }}">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if archive.page < archive.total_pages %}
+        <a href="/archive?page={{ archive.page + 1 }}">Next &raquo;</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+        <h2>No editions yet</h2>
+        <p>Check back after the first newsletter has been generated.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

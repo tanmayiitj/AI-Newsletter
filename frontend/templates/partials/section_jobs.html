@@ -1,0 +1,64 @@
+<!-- Jobs Board section partial — with experience tier segmentation -->
+<section class="newsletter-section section-jobs" id="section-jobs-board">
+    <div class="section-header">
+        <h2 class="section-title">{{ section.title }}</h2>
+        {% include "partials/share_button.html" with context %}
+        {% if section.description %}
+        <p class="section-description">{{ section.description }}</p>
+        {% endif %}
+    </div>
+
+    {% if section.job_listings %}
+    {% set junior_jobs = section.job_listings | selectattr("experience_tier.value", "equalto", "1-2yr") | list %}
+    {% set mid_jobs = section.job_listings | selectattr("experience_tier.value", "equalto", "2-4yr") | list %}
+
+    <!-- 1-2 Years Experience tier -->
+    <div class="tier-section">
+        <h3 class="tier-header">1–2 Years Experience</h3>
+        {% if junior_jobs %}
+        <div class="job-listings">
+            {% for job in junior_jobs %}
+            <article class="job-card">
+                <h4 class="job-title">{{ job.role_title }}</h4>
+                <div class="job-meta">
+                    <span class="job-company">{{ job.company_name }}</span>
+                    <span class="job-location badge-{{ job.location_type.value }}">{{ job.location_type.value | capitalize }}</span>
+                    <span class="job-tier">{{ job.experience_tier.value }}</span>
+                </div>
+                <p class="job-description">{{ job.description }}</p>
+                <a href="{{ job.apply_url }}" target="_blank" rel="noopener noreferrer" class="job-apply-link">Apply &rarr;</a>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="section-placeholder">No listings in this tier currently.</p>
+        {% endif %}
+    </div>
+
+    <!-- 2-4 Years Experience tier -->
+    <div class="tier-section">
+        <h3 class="tier-header">2–4 Years Experience</h3>
+        {% if mid_jobs %}
+        <div class="job-listings">
+            {% for job in mid_jobs %}
+            <article class="job-card">
+                <h4 class="job-title">{{ job.role_title }}</h4>
+                <div class="job-meta">
+                    <span class="job-company">{{ job.company_name }}</span>
+                    <span class="job-location badge-{{ job.location_type.value }}">{{ job.location_type.value | capitalize }}</span>
+                    <span class="job-tier">{{ job.experience_tier.value }}</span>
+                </div>
+                <p class="job-description">{{ job.description }}</p>
+                <a href="{{ job.apply_url }}" target="_blank" rel="noopener noreferrer" class="job-apply-link">Apply &rarr;</a>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="section-placeholder">No listings in this tier currently.</p>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <p class="section-placeholder">Job listings are being compiled. Check back soon!</p>
+    {% endif %}
+</section>

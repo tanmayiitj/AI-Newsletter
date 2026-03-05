@@ -1,0 +1,31 @@
+<!-- Trending Topics section partial -->
+<section class="newsletter-section section-trending" id="section-trending-topics">
+    <div class="section-header">
+        <h2 class="section-title">{{ section.title }}</h2>
+        {% include "partials/share_button.html" with context %}
+        {% if section.description %}
+        <p class="section-description">{{ section.description }}</p>
+        {% endif %}
+    </div>
+
+    {% if section.content_items %}
+    <div class="content-items">
+        {% for item in section.content_items %}
+        <article class="content-card">
+            <h3 class="content-title">
+                <a href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+            </h3>
+            <p class="content-summary">{{ item.summary }}</p>
+            <div class="content-meta">
+                <span class="content-source">{{ item.source_name }}</span>
+                {% if item.source_date %}
+                <span class="content-date">{{ item.source_date.strftime('%b %d, %Y') }}</span>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="section-placeholder">Trending topics are being curated. Check back soon!</p>
+    {% endif %}
+</section>

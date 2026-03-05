@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}AI Pulse Newsletter — Edition #{{ edition.edition_number }}{% endblock %}
+
+{% block content %}
+<article class="newsletter-edition">
+    <header class="edition-header">
+        <p class="edition-meta">Edition #{{ edition.edition_number }} &middot; {{ edition.created_at.strftime('%B %d, %Y') }}</p>
+        <h1 class="edition-headline">{{ edition.headline }}</h1>
+        <p class="executive-summary">{{ edition.executive_summary }}</p>
+    </header>
+
+    <div class="newsletter-sections">
+        {% for section in edition.sections %}
+            {% if section.section_type.value == "trending_topics" %}
+                {% include "partials/section_trending.html" %}
+            {% elif section.section_type.value == "top_developments" %}
+                {% include "partials/section_developments.html" %}
+            {% elif section.section_type.value == "corporate_tools" %}
+                {% include "partials/section_tools.html" %}
+            {% elif section.section_type.value == "future_requirements" %}
+                {% include "partials/section_future.html" %}
+            {% elif section.section_type.value == "jobs_board" %}
+                {% include "partials/section_jobs.html" %}
+            {% endif %}
+        {% endfor %}
+    </div>
+</article>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='/js/share.js') }}"></script>
+<script src="{{ url_for('static', path='/js/smooth-scroll.js') }}"></script>
+{% endblock %}
