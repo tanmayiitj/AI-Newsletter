@@ -2,6 +2,7 @@
 
 import math
 from datetime import datetime, timezone
+from typing import Optional
 
 from backend.database.connection import get_collection
 from backend.models.newsletter import (
@@ -23,7 +24,7 @@ async def create_edition(edition: NewsletterEdition) -> NewsletterEdition:
     return NewsletterEdition.model_validate(doc)
 
 
-async def get_latest() -> NewsletterEdition | None:
+async def get_latest() -> Optional[NewsletterEdition]:
     """Return the most recently published edition, or None."""
     collection = get_collection(COLLECTION_NAME)
     doc = await collection.find_one(
@@ -35,7 +36,7 @@ async def get_latest() -> NewsletterEdition | None:
     return NewsletterEdition.model_validate(doc)
 
 
-async def get_by_id(edition_id: str) -> NewsletterEdition | None:
+async def get_by_id(edition_id: str) -> Optional[NewsletterEdition]:
     """Return a specific edition by its MongoDB ObjectId string."""
     from bson import ObjectId
 
@@ -89,7 +90,7 @@ async def get_next_edition_number() -> int:
     return doc["edition_number"] + 1
 
 
-async def publish_edition(edition_id: str) -> NewsletterEdition | None:
+async def publish_edition(edition_id: str) -> Optional[NewsletterEdition]:
     """Set an edition's status to published with current timestamp."""
     from bson import ObjectId
 

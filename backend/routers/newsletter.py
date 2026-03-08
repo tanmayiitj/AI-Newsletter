@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import secrets
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security import APIKeyHeader
@@ -24,7 +25,7 @@ generation_lock = asyncio.Lock()
 
 
 async def verify_api_key(
-    api_key: str | None = Security(api_key_header),
+    api_key: Optional[str] = Security(api_key_header),
 ) -> str:
     """Validate the API key from the X-API-Key header."""
     if api_key is None or not secrets.compare_digest(
@@ -50,12 +51,12 @@ async def generate_newsletter(
     async with generation_lock:
         try:
             edition_number = await newsletter_service.get_next_edition_number()
-            logger.info("Generating newsletter edition #%d", edition_number)
+            logger.info("Received generate request for edition #%d", edition_number)
 
             edition = await generate_full_edition(edition_number)
             saved = await newsletter_service.create_edition(edition)
 
-            logger.info("Newsletter edition #%d published successfully", edition_number)
+            logger.info("Edition #%d saved & published! View at http://localhost:8000", edition_number)
             return saved
         except LLMServiceError as e:
             logger.error("LLM service error during generation: %s", e)

@@ -8,8 +8,9 @@ class Settings(BaseSettings):
 
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_db_name: str = "ai_pulse"
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o"
+    hf_api_token: str = ""
+    hf_model: str = "deepseek-ai/DeepSeek-R1"
+    hf_provider: str = "novita"
     admin_api_key: str = ""
     app_env: str = "development"
     app_port: int = 8000

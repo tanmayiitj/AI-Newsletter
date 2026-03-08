@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from pymongo import AsyncMongoClient
 
@@ -9,7 +10,7 @@ from backend.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-db_client: AsyncMongoClient | None = None
+db_client: Optional[AsyncMongoClient] = None
 
 
 def get_database():

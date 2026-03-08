@@ -7,7 +7,7 @@ An AI-powered newsletter web application that curates and presents the latest AI
 - **Backend**: Python 3.11+ / FastAPI with Pydantic v2 models
 - **Database**: MongoDB via pymongo AsyncMongoClient
 - **Frontend**: Vanilla HTML/CSS/JS with Jinja2 server-side rendering
-- **LLM**: OpenAI API with Structured Outputs for content generation
+- **LLM**: Hugging Face Inference API for content generation
 
 ### Project Structure
 
@@ -39,7 +39,7 @@ tests/             # pytest test suite
 
 - Python 3.11+
 - MongoDB 7.x (local or Docker)
-- OpenAI API key
+- Hugging Face API token ([get one here](https://huggingface.co/settings/tokens))
 
 ### Quick Start
 
@@ -50,11 +50,11 @@ python -m venv .venv
 # source .venv/bin/activate     # macOS/Linux
 
 # Install dependencies
-pip install fastapi "uvicorn[standard]" "pymongo[async]" pydantic pydantic-settings python-dotenv httpx jinja2
+pip install fastapi "uvicorn[standard]" "pymongo[async]" pydantic pydantic-settings python-dotenv huggingface_hub jinja2
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your MongoDB URI, OpenAI API key, and admin key
+# Edit .env with your MongoDB URI, Hugging Face API token, and admin key
 
 # Start MongoDB (Docker)
 docker run -d -p 27017:27017 --name ai-pulse-mongo mongo:7

@@ -7,6 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from backend.config.settings import settings
 from backend.models.newsletter import (
     ContentItem,
     EditionStatus,
@@ -98,11 +99,12 @@ async def generate_section(
     start_time = time.monotonic()
 
     try:
+        logger.info("        Calling DeepSeek-R1 ... (this may take 30-60s)")
         result = await generate_structured(prompt, LLMContentItems)
         duration = time.monotonic() - start_time
         logger.info(
-            "Section '%s' generated successfully | items=%d | duration=%.2fs",
-            section_type.value, len(result.items), duration,
+            "        Done in %.1fs | %d items generated",
+            duration, len(result.items),
         )
         return NewsletterSection(
             section_type=section_type,
@@ -114,9 +116,10 @@ async def generate_section(
     except (LLMServiceError, Exception) as e:
         duration = time.monotonic() - start_time
         logger.error(
-            "Section '%s' generation failed | duration=%.2fs | error=%s",
-            section_type.value, duration, str(e),
+            "        FAILED after %.1fs | %s",
+            duration, str(e),
         )
+        logger.warning("        Using placeholder content for this section")
         return NewsletterSection(
             section_type=section_type,
             display_order=display_order,
@@ -133,11 +136,12 @@ async def _generate_jobs_section(
     """Generate the jobs board section."""
     start_time = time.monotonic()
     try:
+        logger.info("        Calling DeepSeek-R1 ... (this may take 30-60s)")
         job_listings = await generate_job_listings()
         duration = time.monotonic() - start_time
         logger.info(
-            "Section 'jobs_board' generated successfully | listings=%d | duration=%.2fs",
-            len(job_listings), duration,
+            "        Done in %.1fs | %d job listings generated",
+            duration, len(job_listings),
         )
         return NewsletterSection(
             section_type=SectionType.JOBS_BOARD,
@@ -150,9 +154,10 @@ async def _generate_jobs_section(
     except (LLMServiceError, Exception) as e:
         duration = time.monotonic() - start_time
         logger.error(
-            "Section 'jobs_board' generation failed | duration=%.2fs | error=%s",
+            "        FAILED after %.1fs | %s",
             duration, str(e),
         )
+        logger.warning("        Using placeholder content for this section")
         return NewsletterSection(
             section_type=SectionType.JOBS_BOARD,
             display_order=display_order,
@@ -209,16 +214,26 @@ async def generate_full_edition(edition_number: int) -> NewsletterEdition:
         LLMServiceError: If critical generation steps fail entirely.
     """
     generation_start = time.monotonic()
-    logger.info("Starting newsletter generation | edition=%d", edition_number)
+    total_sections = len(SECTION_ORDER)
+    logger.info("="*60)
+    logger.info("NEWSLETTER GENERATION STARTED | Edition #%d", edition_number)
+    logger.info("="*60)
+    logger.info("Model: %s (provider: %s)", settings.hf_model, settings.hf_provider)
+    logger.info("Sections to generate: %d", total_sections)
+    logger.info("-"*60)
 
     # Generate all sections sequentially (to stay within rate limits)
     sections: list[NewsletterSection] = []
     for i, section_type in enumerate(SECTION_ORDER, start=1):
+        logger.info("[%d/%d] Generating section: %s ...", i, total_sections, SECTION_TITLES[section_type])
         section = await generate_section(section_type, i)
         sections.append(section)
 
+    logger.info("-"*60)
+    logger.info("[%d/%d] Generating headline & executive summary ...", total_sections + 1, total_sections + 1)
     # Generate headline based on generated content
     headline_data = await generate_headline(sections)
+    logger.info("Headline: %s", headline_data.headline[:100])
 
     edition = NewsletterEdition(
         edition_number=edition_number,
@@ -230,9 +245,16 @@ async def generate_full_edition(edition_number: int) -> NewsletterEdition:
     )
 
     total_duration = time.monotonic() - generation_start
-    logger.info(
-        "Newsletter generation complete | edition=%d | duration=%.2fs",
-        edition_number, total_duration,
-    )
+    content_sections = sum(1 for s in sections if s.content_items or s.job_listings)
+    placeholder_sections = len(sections) - content_sections
+    logger.info("="*60)
+    logger.info("NEWSLETTER GENERATION COMPLETE")
+    logger.info("  Edition:      #%d", edition_number)
+    logger.info("  Duration:     %.1f seconds", total_duration)
+    logger.info("  Sections OK:  %d/%d", content_sections, len(sections))
+    if placeholder_sections:
+        logger.info("  Placeholders: %d (LLM failed for these)", placeholder_sections)
+    logger.info("  Saving to database ...")
+    logger.info("="*60)
 
     return edition
