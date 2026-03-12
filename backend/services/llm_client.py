@@ -38,7 +38,9 @@ def _extract_json(text: str) -> str:
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
-        return text[start:end + 1]
+        text = text[start:end + 1]
+    # Remove control characters (except \n, \r, \t which are valid in JSON strings)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
     return text
 
 

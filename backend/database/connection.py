@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import certifi
 from pymongo import AsyncMongoClient
 
 from backend.config.settings import settings
@@ -30,7 +31,7 @@ async def db_lifespan(app):
     """FastAPI lifespan context manager for database connection."""
     global db_client
     logger.info("Connecting to MongoDB at %s", settings.mongodb_uri)
-    db_client = AsyncMongoClient(settings.mongodb_uri)
+    db_client = AsyncMongoClient(settings.mongodb_uri, tlsCAFile=certifi.where())
     # Verify connectivity
     await db_client.admin.command("ping")
     logger.info("MongoDB connection established")

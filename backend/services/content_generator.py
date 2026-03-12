@@ -17,6 +17,7 @@ from backend.models.newsletter import (
 )
 from backend.services.llm_client import LLMServiceError, generate_structured
 from backend.services.jobs_service import generate_job_listings
+from backend.services.news_scraper import scrape_ai_news, format_articles_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -35,31 +36,37 @@ class LLMHeadline(BaseModel):
     executive_summary: str = Field(..., min_length=1, max_length=2000)
 
 
-# Section generation prompts
+# Section generation prompt templates (use {news_context} placeholder)
 SECTION_PROMPTS: dict[SectionType, str] = {
     SectionType.TRENDING_TOPICS: (
-        "Generate 4-5 trending AI topics that corporate professionals should know about "
-        "this week. For each item, provide a title, 2-3 sentence summary, a plausible "
-        "source URL and source name, a relevance score (0.0-1.0), and source date. "
-        "Focus on enterprise AI, LLMs, automation, and AI governance."
+        "Based on the REAL recent AI news articles below, select and summarize 4-5 "
+        "trending AI topics that corporate professionals should know about this week. "
+        "Use the ACTUAL titles, URLs, source names, and dates from the articles below. "
+        "Do NOT invent or fabricate any URLs or sources. "
+        "For each item, provide a title, 2-3 sentence summary, the real source_url "
+        "from the article, source_name, relevance score (0.0-1.0), and source_date.\n\n"
+        "REAL NEWS ARTICLES:\n{news_context}"
     ),
     SectionType.TOP_DEVELOPMENTS: (
-        "Generate 4-5 top AI industry developments from the past week. Include "
-        "breakthroughs in research, major product launches, significant partnerships, "
-        "and policy changes. For each, provide title, summary, source URL, source name, "
-        "relevance score, and source date."
+        "Based on the REAL recent AI news articles below, identify 4-5 top AI industry "
+        "developments. Focus on breakthroughs, product launches, partnerships, and "
+        "policy changes. Use the ACTUAL titles, URLs, source names, and dates from "
+        "the articles. Do NOT invent or fabricate any URLs or sources.\n\n"
+        "REAL NEWS ARTICLES:\n{news_context}"
     ),
     SectionType.CORPORATE_TOOLS: (
-        "Generate 3-4 AI tools and platforms relevant to corporate users. Include "
-        "productivity tools, enterprise AI platforms, developer tools, and analytics "
-        "solutions. For each, provide title, summary, source URL, source name, "
-        "relevance score, and source date."
+        "Based on the REAL recent AI news articles below, identify 3-4 AI tools and "
+        "platforms relevant to corporate users. Focus on productivity tools, enterprise "
+        "platforms, developer tools, and analytics solutions. Use the ACTUAL URLs and "
+        "source names from the articles. Do NOT fabricate URLs.\n\n"
+        "REAL NEWS ARTICLES:\n{news_context}"
     ),
     SectionType.FUTURE_REQUIREMENTS: (
-        "Generate 3-4 emerging AI trends and future skills/requirements that "
-        "professionals should prepare for. Cover upcoming regulations, skill demands, "
-        "technology shifts, and industry transformations. For each, provide title, "
-        "summary, source URL, source name, relevance score, and source date."
+        "Based on the REAL recent AI news articles below, identify 3-4 emerging AI "
+        "trends and future skills/requirements that professionals should prepare for. "
+        "Cover regulations, skill demands, technology shifts. Use the ACTUAL URLs and "
+        "source names from the articles. Do NOT fabricate URLs.\n\n"
+        "REAL NEWS ARTICLES:\n{news_context}"
     ),
 }
 
@@ -85,6 +92,7 @@ PLACEHOLDER_DESCRIPTION = "Content is being curated. Check back soon for updates
 async def generate_section(
     section_type: SectionType,
     display_order: int,
+    news_context: str = "",
 ) -> NewsletterSection:
     """Generate a single newsletter section via LLM.
 
@@ -95,7 +103,7 @@ async def generate_section(
     if section_type == SectionType.JOBS_BOARD:
         return await _generate_jobs_section(display_order, title)
 
-    prompt = SECTION_PROMPTS[section_type]
+    prompt = SECTION_PROMPTS[section_type].format(news_context=news_context)
     start_time = time.monotonic()
 
     try:
@@ -222,11 +230,21 @@ async def generate_full_edition(edition_number: int) -> NewsletterEdition:
     logger.info("Sections to generate: %d", total_sections)
     logger.info("-"*60)
 
-    # Generate all sections sequentially (to stay within rate limits)
+    # Step 1: Scrape real news from the web
+    logger.info("[SCRAPE] Fetching real AI news from RSS feeds ...")
+    scraped_articles = await scrape_ai_news()
+    news_context = format_articles_for_prompt(scraped_articles)
+    if scraped_articles:
+        logger.info("[SCRAPE] Got %d real articles as context for LLM", len(scraped_articles))
+    else:
+        logger.warning("[SCRAPE] No articles fetched — LLM will use its own knowledge")
+    logger.info("-"*60)
+
+    # Step 2: Generate all sections sequentially (to stay within rate limits)
     sections: list[NewsletterSection] = []
     for i, section_type in enumerate(SECTION_ORDER, start=1):
         logger.info("[%d/%d] Generating section: %s ...", i, total_sections, SECTION_TITLES[section_type])
-        section = await generate_section(section_type, i)
+        section = await generate_section(section_type, i, news_context=news_context)
         sections.append(section)
 
     logger.info("-"*60)
