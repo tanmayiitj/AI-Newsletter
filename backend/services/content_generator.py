@@ -120,7 +120,7 @@ async def generate_section(
     start_time = time.monotonic()
 
     try:
-        logger.info("        Calling DeepSeek-R1 ... (this may take 30-60s)")
+        logger.info("        Calling %s ...", settings.openai_model)
         result = await generate_structured(prompt, LLMContentItems)
         duration = time.monotonic() - start_time
         logger.info(
@@ -157,7 +157,7 @@ async def _generate_jobs_section(
     """Generate the jobs board section."""
     start_time = time.monotonic()
     try:
-        logger.info("        Calling DeepSeek-R1 ... (this may take 30-60s)")
+        logger.info("        Calling %s ...", settings.openai_model)
         job_listings = await generate_job_listings()
         duration = time.monotonic() - start_time
         logger.info(
@@ -239,7 +239,7 @@ async def generate_full_edition(edition_number: int) -> NewsletterEdition:
     logger.info("="*60)
     logger.info("NEWSLETTER GENERATION STARTED | Edition #%d", edition_number)
     logger.info("="*60)
-    logger.info("Model: %s (provider: %s)", settings.hf_model, settings.hf_provider)
+    logger.info("Model: %s", settings.openai_model)
     logger.info("Sections to generate: %d", total_sections)
     logger.info("-"*60)
 

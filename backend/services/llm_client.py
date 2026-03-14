@@ -1,11 +1,11 @@
-"""LLM client service for Hugging Face Inference API calls."""
+"""LLM client service for OpenAI API calls."""
 
 import json
 import logging
 import re
 from typing import TypeVar
 
-from huggingface_hub import AsyncInferenceClient
+import httpx
 from pydantic import BaseModel
 
 from backend.config.settings import settings
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 TIMEOUT_SECONDS = 300
 
 
@@ -28,18 +29,13 @@ def _build_schema_instruction(response_model: type[BaseModel]) -> str:
 
 
 def _extract_json(text: str) -> str:
-    """Extract JSON from LLM response, stripping reasoning/think tags and markdown fences."""
-    # Remove <think>...</think> blocks (DeepSeek-R1 reasoning)
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    # Remove markdown code fences
+    """Extract JSON from LLM response, stripping markdown fences and extras."""
     text = re.sub(r"```(?:json)?\s*", "", text)
     text = text.strip()
-    # Find the first { and last } to extract JSON object
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         text = text[start:end + 1]
-    # Remove control characters (except \n, \r, \t which are valid in JSON strings)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
     return text
 
@@ -49,7 +45,7 @@ async def generate_structured(
     response_model: type[T],
     system_prompt: str = "You are an expert AI industry analyst and newsletter editor.",
 ) -> T:
-    """Call the Hugging Face Inference API and return a parsed Pydantic model.
+    """Call the OpenAI API and return a parsed Pydantic model.
 
     Args:
         prompt: The user prompt for content generation.
@@ -63,39 +59,55 @@ async def generate_structured(
         LLMServiceError: If the API call fails or response cannot be parsed.
     """
     schema_instruction = _build_schema_instruction(response_model)
-    full_system_prompt = f"{system_prompt}\n\n{schema_instruction}"
+    full_system = f"{system_prompt}\n\n{schema_instruction}"
 
-    client = AsyncInferenceClient(
-        model=settings.hf_model,
-        provider=settings.hf_provider,
-        token=settings.hf_api_token,
-        timeout=TIMEOUT_SECONDS,
-    )
+    payload = {
+        "model": settings.openai_model,
+        "messages": [
+            {"role": "system", "content": full_system},
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.7,
+        "max_tokens": 4096,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.openai_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+        try:
+            resp = await client.post(OPENAI_API_URL, headers=headers, json=payload)
+        except Exception as e:
+            logger.error("OpenAI API request error: %s", str(e))
+            raise LLMServiceError(f"OpenAI API request failed: {e}") from e
+
+    if resp.status_code != 200:
+        logger.error("OpenAI API HTTP %d: %s", resp.status_code, resp.text[:500])
+        raise LLMServiceError(
+            f"OpenAI API returned HTTP {resp.status_code}: {resp.text[:200]}"
+        )
+
+    data = resp.json()
 
     try:
-        response = await client.chat_completion(
-            messages=[
-                {"role": "system", "content": full_system_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-            max_tokens=4096,
-        )
-    except Exception as e:
-        logger.error("Hugging Face API error: %s", str(e))
-        raise LLMServiceError(f"Hugging Face API call failed: {e}") from e
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        logger.error("Unexpected OpenAI response: %s", json.dumps(data)[:500])
+        raise LLMServiceError(f"Unexpected OpenAI response: {e}") from e
 
-    content = response.choices[0].message.content
     if not content:
-        raise LLMServiceError("Hugging Face API returned empty content")
+        raise LLMServiceError("OpenAI API returned empty content")
 
     cleaned = _extract_json(content)
     try:
         return response_model.model_validate_json(cleaned)
     except Exception as e:
-        logger.error("Failed to parse LLM response: %s\nRaw content: %s", str(e), content[:500])
+        logger.error("Failed to parse LLM response: %s\nRaw: %s", str(e), content[:500])
         raise LLMServiceError(f"Failed to parse LLM response: {e}") from e
 
 
 class LLMServiceError(Exception):
-    """Raised when the LLM service call fails."""
+    """Raised when the LLM service fails."""
