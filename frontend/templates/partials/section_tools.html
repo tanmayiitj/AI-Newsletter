@@ -2,12 +2,17 @@
 <section class="newsletter-section section-tools" id="section-corporate-tools">
     <div class="section-header">
         <h2 class="section-title">{{ section.title }}</h2>
+        <span class="section-item-count">{{ section.content_items|length if section.content_items else 0 }} items</span>
+        <button class="section-toggle" aria-label="Toggle section">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
+        </button>
         {% include "partials/share_button.html" with context %}
         {% if section.description %}
         <p class="section-description">{{ section.description }}</p>
         {% endif %}
     </div>
 
+    <div class="section-body">
     {% if section.content_items %}
     <div class="content-items">
         {% for item in section.content_items %}
@@ -28,4 +33,5 @@
     {% else %}
     <p class="section-placeholder">Corporate tool reviews are being prepared. Check back soon!</p>
     {% endif %}
+    </div>
 </section>

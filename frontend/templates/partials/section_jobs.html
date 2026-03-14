@@ -2,12 +2,17 @@
 <section class="newsletter-section section-jobs" id="section-jobs-board">
     <div class="section-header">
         <h2 class="section-title">{{ section.title }}</h2>
+        <span class="section-item-count">{{ section.job_listings|length if section.job_listings else 0 }} jobs</span>
+        <button class="section-toggle" aria-label="Toggle section">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
+        </button>
         {% include "partials/share_button.html" with context %}
         {% if section.description %}
         <p class="section-description">{{ section.description }}</p>
         {% endif %}
     </div>
 
+    <div class="section-body">
     {% if section.job_listings %}
     {% set junior_jobs = section.job_listings | selectattr("experience_tier.value", "equalto", "1-2yr") | list %}
     {% set mid_jobs = section.job_listings | selectattr("experience_tier.value", "equalto", "2-4yr") | list %}
@@ -61,4 +66,5 @@
     {% else %}
     <p class="section-placeholder">Job listings are being compiled. Check back soon!</p>
     {% endif %}
+    </div>
 </section>

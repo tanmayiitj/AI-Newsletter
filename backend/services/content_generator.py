@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 class LLMContentItems(BaseModel):
     """LLM response model for a list of content items."""
 
+    description: str = Field(
+        default="",
+        max_length=200,
+        description="A 1-2 sentence summary of this section for preview display.",
+    )
     items: list[ContentItem] = Field(default_factory=list)
 
 
@@ -44,28 +49,36 @@ SECTION_PROMPTS: dict[SectionType, str] = {
         "Use the ACTUAL titles, URLs, source names, and dates from the articles below. "
         "Do NOT invent or fabricate any URLs or sources. "
         "For each item, provide a title, 2-3 sentence summary, the real source_url "
-        "from the article, source_name, relevance score (0.0-1.0), and source_date.\n\n"
+        "from the article, source_name, relevance score (0.0-1.0), and source_date.\n"
+        "Also provide a 'description' field: a single compelling sentence (max 150 chars) "
+        "summarizing what this section covers — this is shown as a preview.\n\n"
         "REAL NEWS ARTICLES:\n{news_context}"
     ),
     SectionType.TOP_DEVELOPMENTS: (
         "Based on the REAL recent AI news articles below, identify 4-5 top AI industry "
         "developments. Focus on breakthroughs, product launches, partnerships, and "
         "policy changes. Use the ACTUAL titles, URLs, source names, and dates from "
-        "the articles. Do NOT invent or fabricate any URLs or sources.\n\n"
+        "the articles. Do NOT invent or fabricate any URLs or sources.\n"
+        "Also provide a 'description' field: a single compelling sentence (max 150 chars) "
+        "summarizing what this section covers — this is shown as a preview.\n\n"
         "REAL NEWS ARTICLES:\n{news_context}"
     ),
     SectionType.CORPORATE_TOOLS: (
         "Based on the REAL recent AI news articles below, identify 3-4 AI tools and "
         "platforms relevant to corporate users. Focus on productivity tools, enterprise "
         "platforms, developer tools, and analytics solutions. Use the ACTUAL URLs and "
-        "source names from the articles. Do NOT fabricate URLs.\n\n"
+        "source names from the articles. Do NOT fabricate URLs.\n"
+        "Also provide a 'description' field: a single compelling sentence (max 150 chars) "
+        "summarizing what this section covers — this is shown as a preview.\n\n"
         "REAL NEWS ARTICLES:\n{news_context}"
     ),
     SectionType.FUTURE_REQUIREMENTS: (
         "Based on the REAL recent AI news articles below, identify 3-4 emerging AI "
         "trends and future skills/requirements that professionals should prepare for. "
         "Cover regulations, skill demands, technology shifts. Use the ACTUAL URLs and "
-        "source names from the articles. Do NOT fabricate URLs.\n\n"
+        "source names from the articles. Do NOT fabricate URLs.\n"
+        "Also provide a 'description' field: a single compelling sentence (max 150 chars) "
+        "summarizing what this section covers — this is shown as a preview.\n\n"
         "REAL NEWS ARTICLES:\n{news_context}"
     ),
 }
@@ -118,7 +131,7 @@ async def generate_section(
             section_type=section_type,
             display_order=display_order,
             title=title,
-            description=None,
+            description=result.description or None,
             content_items=result.items,
         )
     except (LLMServiceError, Exception) as e:
@@ -155,7 +168,7 @@ async def _generate_jobs_section(
             section_type=SectionType.JOBS_BOARD,
             display_order=display_order,
             title=title,
-            description=None,
+            description=f"{len(job_listings)} curated AI & ML positions from across the industry." if job_listings else None,
             content_items=[],
             job_listings=job_listings,
         )

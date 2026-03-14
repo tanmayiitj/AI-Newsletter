@@ -3,7 +3,7 @@
 /* Mobile (320px+) — base styles are mobile-first */
 @media (max-width: 767px) {
     .edition-headline {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
     }
 
     .executive-summary {
@@ -12,21 +12,31 @@
 
     .newsletter-section {
         padding: var(--spacing-md);
+        border-radius: var(--radius-md);
+    }
+
+    .newsletter-section::before {
+        left: var(--spacing-md);
     }
 
     .section-title {
-        font-size: 1.35rem;
+        font-size: 1.15rem;
+    }
+
+    /* Hide item count on mobile when collapsed — saves space */
+    .newsletter-section.collapsed .section-item-count {
+        display: none;
     }
 
     .content-meta {
         flex-direction: column;
-        gap: var(--spacing-xs);
+        gap: 2px;
     }
 
     .job-meta {
         flex-direction: column;
         align-items: flex-start;
-        gap: var(--spacing-xs);
+        gap: 4px;
     }
 
     .header-container {
@@ -35,14 +45,22 @@
     }
 
     .main-content {
-        padding: var(--spacing-md) var(--spacing-sm);
+        padding: var(--spacing-lg) var(--spacing-sm);
+    }
+
+    .content-card {
+        padding: var(--spacing-sm);
+    }
+
+    .job-card {
+        padding: var(--spacing-sm);
     }
 }
 
 /* Tablet (768px+) */
 @media (min-width: 768px) {
     .edition-headline {
-        font-size: 2.25rem;
+        font-size: 2rem;
     }
 
     .newsletter-section {
@@ -53,31 +71,33 @@
 /* Desktop (1280px+) */
 @media (min-width: 1280px) {
     .edition-headline {
-        font-size: 2.75rem;
+        font-size: 2.5rem;
     }
 
     .main-content {
         padding: var(--spacing-xl) var(--spacing-md);
     }
-
-    .newsletter-sections {
-        gap: var(--spacing-xl);
-    }
 }
 
 /* Print styles */
 @media print {
-    .site-header, .site-footer, .share-button {
+    .site-header, .site-footer, .share-button, .section-toggle {
         display: none;
     }
 
     .newsletter-section {
         break-inside: avoid;
         border: none;
+        box-shadow: none;
         padding: 0;
     }
 
     .newsletter-section::before {
         display: none;
+    }
+
+    .newsletter-section.collapsed .section-body {
+        max-height: none;
+        opacity: 1;
     }
 }

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}AI Pulse Newsletter — Edition #{{ edition.edition_number }}{% endblock %}
+{% block title %}AI Pulse — Edition #{{ edition.edition_number }}{% endblock %}
+{% block og_title %}AI Pulse — {{ edition.headline }}{% endblock %}
 
 {% block content %}
 <article class="newsletter-edition">
@@ -32,6 +33,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', path='/js/sections.js') }}"></script>
 <script src="{{ url_for('static', path='/js/share.js') }}"></script>
 <script src="{{ url_for('static', path='/js/smooth-scroll.js') }}"></script>
 {% endblock %}
