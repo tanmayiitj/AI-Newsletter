@@ -81,6 +81,31 @@ async def get_archive(page: int = 1, per_page: int = 10):
     return await newsletter_service.list_paginated(page=page, per_page=per_page)
 
 
+@router.get("/search")
+async def search_newsletters(
+    q: str = "", year: str = "", month: str = "", limit: int = 10,
+):
+    """Search newsletters by keyword and/or year/month filter.
+
+    Args:
+        q: Search query text (searches headlines, summaries, article titles).
+        year: Year filter (e.g. 2026).
+        month: Month filter (e.g. 03 for March).
+        limit: Maximum results (default 10).
+    """
+    results = await newsletter_service.search_editions(
+        query=q, year=year, month=month, limit=min(limit, 50),
+    )
+    return {"results": [r.model_dump() for r in results], "total": len(results)}
+
+
+@router.get("/months")
+async def get_months():
+    """Return available months that have published editions."""
+    years = await newsletter_service.get_available_years()
+    return {"years": years}
+
+
 @router.get("/{edition_id}", response_model=NewsletterEdition)
 async def get_edition(edition_id: str):
     """Return a specific newsletter edition by its MongoDB ID."""

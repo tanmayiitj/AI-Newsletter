@@ -44,6 +44,19 @@
         gap: var(--spacing-xs);
     }
 
+    .archive-controls {
+        flex-direction: column;
+    }
+
+    .filter-group {
+        flex-direction: row;
+    }
+
+    .custom-select {
+        min-width: 0;
+        flex: 1;
+    }
+
     .main-content {
         padding: var(--spacing-lg) var(--spacing-sm);
     }

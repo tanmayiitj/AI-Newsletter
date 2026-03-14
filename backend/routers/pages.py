@@ -22,10 +22,11 @@ async def homepage(request: Request):
 
 @router.get("/archive", response_class=HTMLResponse)
 async def archive_page(request: Request, page: int = 1):
-    """Render the archive listing page with pagination."""
+    """Render the archive listing page with search and month filter."""
     archive = await newsletter_service.list_paginated(page=page, per_page=10)
+    years = await newsletter_service.get_available_years()
     return templates.TemplateResponse(
-        request, "archive.html", {"archive": archive}
+        request, "archive.html", {"archive": archive, "years": years}
     )
 
 
