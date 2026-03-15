@@ -1,0 +1,22 @@
+# Core framework
+fastapi==0.128.8
+uvicorn[standard]==0.39.0
+
+# Database
+pymongo[srv]==4.16.0
+
+# Configuration
+pydantic-settings==2.11.0
+pydantic==2.10.6
+
+# HTTP client
+httpx==0.28.1
+
+# RSS parsing
+feedparser==6.0.12
+
+# Templating
+Jinja2==3.1.6
+
+# SSL certificates (MongoDB Atlas)
+certifi==2026.2.25
