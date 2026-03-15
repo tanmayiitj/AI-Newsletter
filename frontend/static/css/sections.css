@@ -149,8 +149,14 @@
     overflow: hidden;
     transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
                 opacity 0.25s ease;
-    max-height: 2000px;
+    max-height: 5000px;
     opacity: 1;
+}
+
+/* Once expanded and transition done, remove height limit so nothing clips */
+.newsletter-section:not(.collapsed) .section-body {
+    max-height: none;
+    overflow: visible;
 }
 
 .newsletter-section.collapsed .section-body {
