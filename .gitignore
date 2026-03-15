@@ -13,12 +13,10 @@ build/
 venv/
 ENV/
 
-# Environment variables
+# Environment variables & secrets
 .env
-.env.*
-!.env.example
 
-# IDE
+# IDE & editors
 .vscode/
 .idea/
 *.swp
@@ -30,18 +28,26 @@ ENV/
 Thumbs.db
 Desktop.ini
 
+# Speckit scaffolding (dev tooling only)
+.specify/
+.github/agents/
+.github/prompts/
+
+# Design specs (internal docs)
+specs/
+
 # Testing
 .pytest_cache/
 htmlcov/
 .coverage
 coverage.xml
+test_*.py
+test_*.txt
 
 # Type checking
 .mypy_cache/
 
-# Logs
+# Logs & temp
 *.log
-
-# Temporary
 *.tmp
 *.bak

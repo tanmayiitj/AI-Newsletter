@@ -1,90 +1,120 @@
 # AI Pulse Newsletter
 
-An AI-powered newsletter web application that curates and presents the latest AI industry content in a beautiful, story-driven layout.
+A production-ready AI-powered newsletter platform that automatically curates the latest AI industry news, tools, and job opportunities into a beautiful, themed weekly digest.
 
-## Architecture
+## Features
 
-- **Backend**: Python 3.11+ / FastAPI with Pydantic v2 models
-- **Database**: MongoDB via pymongo AsyncMongoClient
-- **Frontend**: Vanilla HTML/CSS/JS with Jinja2 server-side rendering
-- **LLM**: Hugging Face Inference API for content generation
+- **Automated Content Generation** — Scrapes real AI news from 7 RSS feeds (TechCrunch, The Verge, VentureBeat, Ars Technica, WIRED, MIT News, Google AI Blog) and uses OpenAI GPT to generate curated newsletter sections
+- **Real Job Listings** — Scrapes AI/ML jobs from RemoteOK and Arbeitnow with intelligent keyword filtering
+- **5 Newsletter Sections** — Trending Topics, Top Developments, Corporate Tools, Future Requirements, Jobs Board
+- **Section Summaries** — Each section includes an AI-generated preview description shown when collapsed
+- **Expandable Sections** — All sections collapse by default with smooth animations; click to expand
+- **Theme System** — Light, Dark, and Warm themes with localStorage persistence and no-flash loading
+- **Archive with Search** — Full-text search across all newsletters with custom themed year/month filter dropdowns
+- **Responsive Design** — Mobile-first layout with Inter + Newsreader fonts, soft shadows, and subtle background patterns
+- **Production-Ready** — OpenGraph meta tags, favicon, SSL certificate handling for MongoDB Atlas
 
-### Project Structure
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Python 3.9+, FastAPI, Uvicorn |
+| **Database** | MongoDB Atlas (pymongo async) |
+| **LLM** | OpenAI API (GPT-4o-mini default) |
+| **Scraping** | httpx, feedparser (RSS) |
+| **Frontend** | Vanilla HTML/CSS/JS, Jinja2 templates |
+| **Styling** | CSS custom properties, 3 themes |
+
+## Project Structure
 
 ```
-backend/           # FastAPI application
-├── config/        # Settings, templates
-├── models/        # Pydantic data models
-├── services/      # Business logic (LLM, content generation, CRUD)
-├── routers/       # API endpoints and page routes
-└── database/      # MongoDB connection
-
-frontend/          # Static assets and templates
-├── templates/     # Jinja2 HTML templates
-└── static/        # CSS, JS, images
-
-tests/             # pytest test suite
+backend/
+├── config/          # Settings, Jinja2 templates config
+├── database/        # MongoDB async connection + lifespan
+├── models/          # Pydantic data models (newsletter, jobs)
+├── routers/         # API endpoints, page routes
+└── services/        # LLM client, content generator, news/jobs scrapers
+frontend/
+├── static/
+│   ├── css/         # reset, typography, layout, sections, responsive
+│   └── js/          # theme, sections, archive, share, smooth-scroll
+└── templates/       # Jinja2 HTML templates + partials
 ```
 
-### 4-Layer Architecture
+## Quick Start
 
-1. **Config** — Settings, environment variables
-2. **Models** — Pydantic schemas, enums, validation
-3. **Services** — Business logic, LLM interaction, database CRUD
-4. **Routers** — HTTP endpoints, request/response handling
-
-## Setup
-
-### Prerequisites
-
-- Python 3.11+
-- MongoDB 7.x (local or Docker)
-- Hugging Face API token ([get one here](https://huggingface.co/settings/tokens))
-
-### Quick Start
+### 1. Clone & setup
 
 ```bash
-# Create virtual environment
+git clone https://github.com/tanmayiitj/AI-Newsletter.git
+cd AI-Newsletter
 python -m venv .venv
 .venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # macOS/Linux
-
-# Install dependencies
-pip install fastapi "uvicorn[standard]" "pymongo[async]" pydantic pydantic-settings python-dotenv huggingface_hub jinja2
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your MongoDB URI, Hugging Face API token, and admin key
-
-# Start MongoDB (Docker)
-docker run -d -p 27017:27017 --name ai-pulse-mongo mongo:7
-
-# Run the server
-uvicorn backend.main:app --reload --port 8000
+source .venv/bin/activate       # macOS/Linux
+pip install fastapi "uvicorn[standard]" "pymongo[async]" pydantic-settings httpx feedparser certifi
 ```
 
-### Generate a Newsletter
+### 2. Configure environment
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/newsletter/generate \
-  -H "X-API-Key: your-admin-key-here"
+cp .env.example .env
 ```
 
-## Key URLs
+Edit `.env` with your credentials:
+- **MongoDB Atlas** connection string
+- **OpenAI API key** from [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Admin API key** — generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
-| URL | Description |
-|-----|-------------|
-| `http://localhost:8000` | Homepage (latest newsletter) |
-| `http://localhost:8000/archive` | Newsletter archive |
-| `http://localhost:8000/api/v1/health` | Health check |
-| `http://localhost:8000/docs` | OpenAPI documentation |
+### 3. Run the server
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+### 4. Generate a newsletter
+
+```bash
+curl -X POST http://localhost:8000/api/v1/newsletter/generate -H "X-API-Key: YOUR_ADMIN_KEY"
+```
+
+### 5. View it
+
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ## API Endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/v1/newsletter/generate` | API Key | Generate new edition |
-| GET | `/api/v1/newsletter/latest` | None | Get latest edition |
-| GET | `/api/v1/newsletter/archive` | None | Paginated archive |
-| GET | `/api/v1/newsletter/{id}` | None | Get edition by ID |
-| GET | `/api/v1/health` | None | Health check |
+| `GET` | `/` | — | Latest newsletter |
+| `GET` | `/archive` | — | Archive with search & filters |
+| `GET` | `/edition/{id}` | — | Specific edition |
+| `POST` | `/api/v1/newsletter/generate` | API Key | Generate new edition |
+| `GET` | `/api/v1/newsletter/search` | — | Search newsletters (`?q=&year=&month=`) |
+| `GET` | `/api/v1/newsletter/months` | — | Available years |
+| `GET` | `/api/v1/health` | — | Health check |
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `MONGODB_URI` | MongoDB Atlas connection string | Yes |
+| `MONGODB_DB_NAME` | Database name (default: `ai_pulse`) | No |
+| `OPENAI_API_KEY` | OpenAI API key | Yes |
+| `OPENAI_MODEL` | Model name (default: `gpt-4o-mini`) | No |
+| `ADMIN_API_KEY` | Key for generation endpoint | Yes |
+| `APP_ENV` | `development` or `production` | No |
+| `APP_PORT` | Server port (default: `8000`) | No |
+
+## Themes
+
+The newsletter supports three themes, toggled via the button in the header:
+
+- **☀️ Light** — Clean slate palette with indigo accents
+- **🌙 Dark** — Deep navy, perfect for night reading
+- **🍂 Warm** — Cozy amber tones, easy on the eyes
+
+Theme preference is saved in localStorage and applied before page render (no flash).
+
+## License
+
+MIT
