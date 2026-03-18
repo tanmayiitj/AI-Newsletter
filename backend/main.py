@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from backend.database.connection import db_lifespan
-from backend.routers import health, newsletter, pages
+from backend.routers import auth, health, newsletter, pages, share
 
 # Configure structured logging
 logging.basicConfig(
@@ -31,5 +31,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Include routers
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(newsletter.router)
+app.include_router(share.router)
 app.include_router(pages.router)

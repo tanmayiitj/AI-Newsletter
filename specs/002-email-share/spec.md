@@ -1,62 +1,72 @@
-# Spec 002 — Share Newsletter via Email
+# Spec 002 — Share Newsletter via Email (Google Login)
 
-> **Status:** Draft | **Author:** @tanmayiitj | **Date:** 2026-03-17
+> **Status:** Revised | **Author:** @tanmayiitj | **Date:** 2026-03-18
 
 ---
 
 ## Overview
 
-Allow any public visitor on the AI Pulse Newsletter site to share a newsletter edition (or a specific section anchor) with someone else by providing a recipient email address. The system sends an email containing a short description and a direct link. No login, no account creation, no subscription — purely ephemeral public sharing.
+Allow any visitor to log in with their Google account and send the full newsletter edition to their own email with one click. The header shows a "Login with Google" button; after login it shows the user's circular profile picture with a logout dropdown. A "Send to My Email" button appears in the edition header so the user can receive the newsletter in their inbox.
 
 ---
 
 ## Motivation
 
-The existing `share.js` copies a section URL to the clipboard. This is useful for sharing on chat apps, but many users want to send a link directly to a specific person via email without leaving the page. Adding an email share flow lowers the friction for distributing individual editions to colleagues or friends.
+Users want a personal copy of the newsletter in their inbox to read later or search for in Gmail. Google OAuth is the natural auth mechanism since the newsletter is sent via Gmail SMTP and every target user already has a Google account. A single "send to self" flow is simpler and more useful than multi-recipient sharing.
 
 ---
 
 ## Goals
 
-- **G1** — Any visitor can open a "Share via Email" dialog from any newsletter edition page or edition card in the archive.
-- **G2** — The visitor enters one or more recipient email addresses and an optional personal note.
-- **G3** — The backend sends a transactional email containing the edition headline, a 1-sentence summary, the optional note, and a direct link to the edition.
-- **G4** — Rate limiting prevents abuse: maximum **3 share emails per IP per 10 minutes**.
-- **G5** — No user login or authentication required to use this feature.
-- **G6** — The share dialog is accessible (keyboard navigable, screen-reader friendly).
-- **G7** — The feature works across all three existing themes (Light, Dark, Warm).
+- **G1** — Visitor can sign in with Google via OAuth 2.0 (one-click login button in site header).
+- **G2** — After login, the header shows the user's circular Google profile picture; clicking it reveals a dropdown with email and logout option.
+- **G3** — A "📧 Send to My Email" button in the edition header sends the full newsletter to the logged-in user's Google email.
+- **G4** — The email contains the full newsletter: headline, summary, every section with its items.
+- **G5** — Rate limiting prevents abuse: max 3 send-to-self emails per user per 10 minutes.
+- **G6** — Session persists until the user logs out or the session expires (24 hours).
+- **G7** — Works across all three themes (Light, Dark, Warm).
+- **G8** — Per-section clipboard share buttons are preserved as-is.
 
 ---
 
 ## Non-Goals
 
-- **NG1** — No email subscription management (no opt-in lists, no unsubscribe flows).
-- **NG2** — No tracking pixels or open-rate analytics.
-- **NG3** — No SMS or social-media sharing in this spec.
-- **NG4** — No login / user account system introduced.
-- **NG5** — No batch/bulk email sending (each share sends to at most 5 recipients).
-- **NG6** — No email template rendering (plain-text + minimal HTML email only).
+- **NG1** — No multi-recipient sharing (user can only send to themselves).
+- **NG2** — No email subscription management or mailing lists.
+- **NG3** — No tracking pixels or open-rate analytics.
+- **NG4** — No profile page or user database — session-only identity.
+- **NG5** — No SMS or social-media sharing in this spec.
 
 ---
 
 ## User Flow
 
 ```
-Visitor on edition page
-  └─► Clicks "📧 Share via Email" button
-        └─► Modal dialog opens
-              ├─ Input: recipient email(s) — comma-separated, max 5
-              ├─ Input: optional personal note (max 300 chars)
-              └─ Clicks "Send"
-                    ├─ [Frontend] validates email format client-side
-                    ├─ [Frontend] POST /api/v1/share/email
-                    └─ [Backend]
-                          ├─ Validates inputs (Pydantic)
-                          ├─ Checks rate limit (IP-based, 3/10min)
-                          ├─ Fetches edition headline + summary from DB
-                          ├─ Sends email via SMTP
-                          └─ Returns 200 OK / error
-                                └─ [Frontend] shows success or error toast
+Visitor arrives at site
+  └─► Sees "Login with Google" button in header
+        └─► Clicks → redirected to Google consent screen
+              └─► Grants access → redirected back with auth code
+                    └─► Backend exchanges code for tokens
+                          └─► Session cookie set (httponly, 24h)
+                          └─► Header now shows circular profile pic + name
+
+Logged-in user on edition page
+  └─► Sees "📧 Send to My Email" button below edition headline
+        └─► Clicks "Send"
+              ├─ [Frontend] POST /api/v1/share/send-to-self (cookie auth)
+              └─ [Backend]
+                    ├─ Validates session
+                    ├─ Checks rate limit (user email, 3/10min)
+                    ├─ Fetches full edition from DB
+                    ├─ Builds rich email with all sections
+                    ├─ Sends via Gmail API (user's access token)
+                    └─ Returns 200 OK / error
+                          └─ [Frontend] shows success or error toast
+
+Profile picture dropdown
+  └─► Click profile pic
+        └─► Dropdown: user email + "Logout" button
+              └─► Logout → clears session cookie → header reverts to login button
 ```
 
 ---
@@ -65,94 +75,43 @@ Visitor on edition page
 
 ### Backend
 
-#### New service: `backend/services/email_service.py`
-Responsibilities:
-- Build the email body (plain-text + HTML multipart).
-- Send via `aiosmtplib` (async SMTP).
-- Accept: `recipients: list[str]`, `edition_headline: str`, `edition_summary: str`, `edition_url: str`, `personal_note: str | None`.
+#### New settings (`backend/config/settings.py`)
+- `google_client_id` — Google OAuth client ID
+- `google_client_secret` — Google OAuth client secret
+- `google_redirect_uri` — OAuth callback URL
+- `session_secret_key` — Secret for signing session cookies
+- `session_max_age` — Session TTL in seconds (default 86400 = 24h)
 
-#### New service: `backend/services/rate_limiter.py`
-Responsibilities:
-- In-memory sliding-window rate limiter keyed by client IP.
-- Configuration: `RATE_LIMIT_MAX_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS` from settings.
-- Expose `async def check_rate_limit(ip: str) -> bool` — returns `True` if allowed, `False` if exceeded.
-- Periodic cleanup of expired entries to prevent memory growth.
+#### New router: `backend/routers/auth.py`
+- `GET /auth/login` — Redirects to Google OAuth consent URL
+- `GET /auth/callback` — Exchanges code for tokens, fetches user info, sets session cookie
+- `POST /auth/logout` — Clears session cookie
+- `GET /auth/me` — Returns current user info or 401
 
-#### New model: `backend/models/share.py`
-```python
-class ShareEmailRequest(BaseModel):
-    edition_id: str
-    recipients: list[EmailStr]  # min 1, max 5
-    personal_note: Optional[str] = Field(default=None, max_length=300)
+#### Updated router: `backend/routers/share.py`
+- `POST /api/v1/share/send-to-self` — Requires valid session
+- Remove old multi-recipient endpoint
 
-class ShareEmailResponse(BaseModel):
-    success: bool
-    message: str
-```
+#### Updated service: `backend/services/email_service.py`
+- `send_newsletter_email(recipient, edition, edition_url, access_token)` — sends via Gmail API
+- Uses user's own OAuth access token — no SMTP config needed
 
-#### New router: `backend/routers/share.py`
-```
-POST /api/v1/share/email
-  Body: ShareEmailRequest
-  Response: ShareEmailResponse
-  Auth: None (public endpoint)
-  Rate limit: 3 requests per IP per 10 minutes
-```
-
-#### Settings additions (`backend/config/settings.py`)
-```
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-smtp-user@gmail.com
-SMTP_PASSWORD=your-smtp-app-password
-SMTP_FROM_NAME=AI Pulse Newsletter
-SMTP_FROM_EMAIL=your-smtp-user@gmail.com
-RATE_LIMIT_MAX_REQUESTS=3
-RATE_LIMIT_WINDOW_SECONDS=600
-```
+#### Updated model: `backend/models/share.py`
+- `SendToSelfRequest(BaseModel)` — `edition_id: str`
+- Keep `ShareEmailResponse`
 
 ### Frontend
 
-#### New JS module: `frontend/static/js/email-share.js`
-- Renders the share modal (dynamically injected into DOM).
-- Handles form validation (RFC 5322 email regex, max 5 recipients).
-- Calls `POST /api/v1/share/email`.
-- Shows success/error toast notification.
-- Respects current theme via CSS custom properties.
+#### Header (`frontend/templates/partials/header.html`)
+- "Login with Google" button (hidden when logged in)
+- Circular profile picture + dropdown (hidden when logged out)
 
-#### Template change: `frontend/templates/partials/share_button.html`
-- Add a second button: `📧 Share via Email` alongside the existing clipboard share button.
+#### JS: `frontend/static/js/auth.js`
+- On page load: `GET /auth/me` to check login state
+- Toggle login/profile UI, handle logout, handle send-to-self
 
-#### New CSS: included in `frontend/static/css/sections.css` or a new `email-share.css`
-- Modal overlay, dialog box, form inputs, toast — all using existing CSS custom property tokens for theme compatibility.
-
----
-
-## Email Template
-
-### Subject
-```
-[AI Pulse] {edition_headline}
-```
-
-### Plain-text body
-```
-Someone shared an AI Pulse Newsletter edition with you.
-
-"{edition_headline}"
-{edition_summary}
-
-{personal_note if present}
-
-Read the full edition here:
-{edition_url}
-
----
-AI Pulse Newsletter · You received this because someone shared it with you.
-```
-
-### HTML body
-Minimal inline-styled HTML. No images. Uses the edition headline as an `<h2>`, summary as a `<p>`, optional note in a `<blockquote>`, and a prominent CTA link button.
+#### CSS: `frontend/static/css/auth.css`
+- Profile avatar, dropdown, send button, toast styles
 
 ---
 
@@ -160,40 +119,19 @@ Minimal inline-styled HTML. No images. Uses the edition headline as an `<h2>`, s
 
 | Scenario | HTTP Status | User message |
 |---|---|---|
-| Invalid email format | 422 | "Please enter a valid email address." |
-| More than 5 recipients | 422 | "You can share with up to 5 people at once." |
-| Rate limit exceeded | 429 | "You've shared too many times recently. Try again in a few minutes." |
-| SMTP failure | 502 | "Email could not be sent. Please try again later." |
+| Not logged in | 401 | "Please log in with Google first." |
+| Rate limit exceeded | 429 | "Too many emails recently. Try again in a few minutes." |
 | Edition not found | 404 | "This edition no longer exists." |
+| SMTP failure | 502 | "Email could not be sent. Please try again later." |
+| Google OAuth error | 400 | "Google login failed. Please try again." |
 
 ---
 
 ## Security Considerations
 
-- **Input sanitisation** — Pydantic `EmailStr` validates all recipient addresses server-side.
-- **Rate limiting** — IP-based sliding window prevents bulk sending.
-- **No header injection** — Use `email.message.EmailMessage` (stdlib) with explicit field setters, never string interpolation into headers.
-- **Personal note sanitisation** — Strip HTML tags from `personal_note` before embedding in email body.
-- **SMTP credentials** — Loaded exclusively from `.env` via `Settings`. Never logged.
-
----
-
-## Alternatives Considered
-
-| Option | Rejected because |
-|---|---|
-| Third-party email SDK (SendGrid, Mailgun) | Adds paid external dependency; stdlib SMTP + aiosmtplib is sufficient |
-| Server-side rendered share page | Overkill; a modal is simpler and keeps the user on the edition |
-| `mailto:` link | Opens native mail client — not all users have one configured; no control over email format |
-| Redis-backed rate limiting | Adds infrastructure dependency; in-memory is fine for single-server deployment |
-
----
-
-## Risks and Mitigations
-
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| SMTP credentials leaked | Low | Stored only in `.env`, excluded from git via `.gitignore` |
-| Spam / abuse via share endpoint | Medium | IP rate limit + max 5 recipients per request |
-| Email deliverability (spam folder) | Medium | Proper From header, SPF/DKIM on sending domain (ops concern) |
-| Memory leak in rate limiter | Low | Periodic cleanup of expired entries on each check |
+- **Session cookie**: `httponly`, `samesite=lax`, `secure` in production
+- **OAuth state parameter**: Random state token prevents CSRF
+- **Rate limiting**: Per-user-email sliding window
+- **SMTP credentials**: Not needed — email sent via user's own Gmail API token.
+- **No user database**: Session-only identity, minimal data footprint
+- **Google client secret**: `.env` only
