@@ -3,7 +3,7 @@
 {% block title %}AI Pulse Newsletter — Edition #{{ edition.edition_number }}{% endblock %}
 
 {% block content %}
-<article class="newsletter-edition">
+<article class="newsletter-edition" data-edition-id="{{ edition.id }}">
     <header class="edition-header">
         <p class="edition-meta">Edition #{{ edition.edition_number }} &middot; {{ edition.created_at.strftime('%B %d, %Y') }}</p>
         <h1 class="edition-headline">{{ edition.headline }}</h1>

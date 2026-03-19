@@ -91,6 +91,11 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 | `POST` | `/api/v1/newsletter/generate` | API Key | Generate new edition |
 | `GET` | `/api/v1/newsletter/search` | — | Search newsletters (`?q=&year=&month=`) |
 | `GET` | `/api/v1/newsletter/months` | — | Available years |
+| `POST` | `/api/v1/share/send-to-self` | Session | Send newsletter to your email |
+| `GET` | `/auth/login` | — | Google OAuth login redirect |
+| `GET` | `/auth/callback` | — | Google OAuth callback |
+| `POST` | `/auth/logout` | Session | Clear session |
+| `GET` | `/auth/me` | Session | Current user info |
 | `GET` | `/api/v1/health` | — | Health check |
 
 ## Environment Variables
@@ -104,6 +109,15 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 | `ADMIN_API_KEY` | Key for generation endpoint | Yes |
 | `APP_ENV` | `development` or `production` | No |
 | `APP_PORT` | Server port (default: `8000`) | No |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID | Yes* |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | Yes* |
+| `GOOGLE_REDIRECT_URI` | OAuth callback URL (default: `http://localhost:8000/auth/callback`) | No |
+| `SESSION_SECRET_KEY` | Secret for signing session cookies | Yes |
+| `SESSION_MAX_AGE` | Session TTL in seconds (default: `86400`) | No |
+| `RATE_LIMIT_MAX_REQUESTS` | Max emails per user per window (default: `3`) | No |
+| `RATE_LIMIT_WINDOW_SECONDS` | Rate-limit window in seconds (default: `600`) | No |
+
+\* Required only if using the Google login + email share feature.
 
 ## Themes
 

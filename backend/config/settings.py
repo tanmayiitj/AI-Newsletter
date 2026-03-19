@@ -14,6 +14,19 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_port: int = 8000
 
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/auth/callback"
+
+    # Session
+    session_secret_key: str = "change-me-in-production"
+    session_max_age: int = 86400
+
+    # Rate limiting for share endpoint
+    rate_limit_max_requests: int = 3
+    rate_limit_window_seconds: int = 600
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
