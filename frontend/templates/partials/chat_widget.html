@@ -1,0 +1,62 @@
+<!-- Floating chat widget for AI Pulse Assistant -->
+<div id="chat-widget">
+    <!-- Floating toggle button -->
+    <button id="chat-toggle" class="chat-toggle" aria-label="Open AI Assistant">
+        <svg class="chat-icon-open" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <svg class="chat-icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+    </button>
+
+    <!-- Chat panel -->
+    <div id="chat-panel" class="chat-panel" style="display:none">
+        <div class="chat-header">
+            <div class="chat-header-info">
+                <span class="chat-header-icon">⚡</span>
+                <span class="chat-header-title">AI Pulse Assistant</span>
+            </div>
+            <button id="chat-close" class="chat-close" aria-label="Close chat">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+
+        <div id="chat-messages" class="chat-messages">
+            <div class="chat-message chat-message-bot">
+                <div class="chat-bubble chat-bubble-bot">
+                    👋 Hi! I'm the AI Pulse Assistant. Ask me anything about our newsletter content — AI news, trends, tools, or job listings.
+                </div>
+            </div>
+        </div>
+
+        <div id="chat-typing" class="chat-typing" style="display:none">
+            <div class="chat-bubble chat-bubble-bot">
+                <span class="typing-dots">
+                    <span></span><span></span><span></span>
+                </span>
+            </div>
+        </div>
+
+        <form id="chat-form" class="chat-input-area">
+            <input
+                id="chat-input"
+                type="text"
+                class="chat-input"
+                placeholder="Ask about AI news, tools, jobs..."
+                autocomplete="off"
+                maxlength="2000"
+            >
+            <button type="submit" id="chat-send" class="chat-send" aria-label="Send message">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+            </button>
+        </form>
+    </div>
+</div>

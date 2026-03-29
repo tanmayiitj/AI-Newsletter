@@ -28,6 +28,9 @@ ENV/
 Thumbs.db
 Desktop.ini
 
+# ChromaDB vector store
+chroma_data/
+
 # Speckit scaffolding (dev tooling only)
 .specify/
 .github/agents/
