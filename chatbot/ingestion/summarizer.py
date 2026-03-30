@@ -4,6 +4,8 @@ import logging
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from openai import RateLimitError, APITimeoutError
 
 from chatbot.config.settings import settings
 
@@ -58,6 +60,15 @@ def _format_job_listings(section: dict) -> str:
     return "\n\n".join(parts) if parts else "No job listings."
 
 
+@retry(
+    retry=retry_if_exception_type((RateLimitError, APITimeoutError)),
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    stop=stop_after_attempt(4),
+    before_sleep=lambda rs: logger.warning(
+        "OpenAI call failed (attempt %d), retrying in %ds...",
+        rs.attempt_number, rs.next_action.sleep,
+    ),
+)
 async def summarize_section(
     section: dict,
     edition_number: int,

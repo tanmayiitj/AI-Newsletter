@@ -23,8 +23,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Initialize ChromaDB on startup."""
     logger.info("Initializing chatbot service...")
-    get_vector_store()
-    logger.info("ChromaDB vector store ready")
+    try:
+        get_vector_store()
+        logger.info("ChromaDB vector store ready")
+    except Exception as e:
+        logger.error("Failed to initialize ChromaDB: %s", e)
+        logger.warning("Chatbot will start but queries will fail until ChromaDB is available")
     yield
     logger.info("Chatbot service shutting down")
 
@@ -44,8 +48,8 @@ app.add_middleware(
         f"http://localhost:{settings.chatbot_port}",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 app.include_router(chat.router)

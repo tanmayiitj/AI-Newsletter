@@ -1,6 +1,13 @@
 """Pydantic schemas for the chatbot API."""
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 
 class ChatRequest(BaseModel):
@@ -9,10 +16,19 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     session_id: str | None = None
 
+    @field_validator("session_id")
+    @classmethod
+    def validate_session_id(cls, v: str | None) -> str | None:
+        """Reject session IDs that aren't valid UUIDs."""
+        if v is not None and not _UUID_RE.match(v):
+            return None
+        return v
+
 
 class SourceReference(BaseModel):
     """A reference to the newsletter source that was used to answer."""
 
+    edition_id: str = ""
     edition_number: int
     section_type: str
     section_title: str

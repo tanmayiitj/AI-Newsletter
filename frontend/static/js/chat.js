@@ -73,11 +73,17 @@
                 const link = document.createElement('a');
                 link.className = 'chat-source-link';
                 link.textContent = '\u{1F4F0} Edition #' + src.edition_number + ' — ' + src.section_title;
-                link.href = '#';
+                if (src.edition_id) {
+                    link.href = '/edition/' + src.edition_id;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                } else {
+                    link.href = '#';
+                    link.addEventListener('click', function (e) {
+                        e.preventDefault();
+                    });
+                }
                 link.title = 'Published: ' + src.published_at;
-                link.addEventListener('click', function (e) {
-                    e.preventDefault();
-                });
                 sourcesDiv.appendChild(link);
             });
 
