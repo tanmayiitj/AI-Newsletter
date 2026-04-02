@@ -4,7 +4,7 @@
 (function () {
     'use strict';
 
-    const CHATBOT_API_URL = 'http://localhost:8001/api/v1/chat';
+    const CHATBOT_API_URL = '/api/v1/chat';
 
     // DOM elements
     const toggle = document.getElementById('chat-toggle');

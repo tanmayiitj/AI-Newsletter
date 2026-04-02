@@ -46,6 +46,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8000",
         f"http://localhost:{settings.chatbot_port}",
+        "https://ai-newsletter-ka28.onrender.com",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
