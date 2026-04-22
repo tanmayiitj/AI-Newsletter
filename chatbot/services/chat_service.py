@@ -9,6 +9,7 @@ from typing import Any
 from chatbot.config.settings import settings
 from chatbot.models.schemas import ChatResponse, SourceReference
 from chatbot.retrieval.chain import ask_question
+from chatbot.ingestion.embedder import get_ingested_edition_numbers
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,13 @@ _RELATIVE_PATTERNS = {
     re.compile(r"\bthis\s+month\b", re.IGNORECASE): 0,
 }
 
+# Only apply default current-month filter when query contains temporal intent
+_TEMPORAL_KEYWORDS = re.compile(
+    r"\b(news|happened|latest|recent|update|trending|this\s+week|this\s+month"
+    r"|last\s+month|last\s+week|new\s+tools|new\s+jobs|listed|posted)\b",
+    re.IGNORECASE,
+)
+
 
 def _cleanup_expired_sessions() -> None:
     """Remove sessions that have been inactive beyond the TTL."""
@@ -56,6 +64,14 @@ def get_or_create_session(session_id: str | None) -> tuple[str, list[tuple[str, 
     Returns (session_id, chat_history) where chat_history is list of (human, ai) tuples.
     """
     _cleanup_expired_sessions()
+
+    # Validate session_id format (UUID only)
+    if session_id and not re.match(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        session_id,
+        re.IGNORECASE,
+    ):
+        session_id = None
 
     if session_id and session_id in _sessions:
         session = _sessions[session_id]
@@ -122,10 +138,12 @@ def preprocess_query(raw_query: str) -> tuple[str, dict | None]:
         year = int(year_match.group(1))
         cleaned = _YEAR_PATTERN.sub("", cleaned).strip()
 
-    # Default: if no temporal reference at all, use current month
+    # Default: if no temporal reference, only apply current month filter
+    # when the query has temporal intent (e.g. "news", "latest", "happened")
     if month is None and year is None:
-        year = now.year
-        month = now.month
+        if _TEMPORAL_KEYWORDS.search(raw_query):
+            year = now.year
+            month = now.month
 
     # Build ChromaDB filter
     filter_dict: dict | None = None
@@ -157,6 +175,14 @@ async def handle_chat(message: str, session_id: str | None) -> ChatResponse:
     5. Return structured response
     """
     sid, chat_history = get_or_create_session(session_id)
+
+    # Check if vector store has any data
+    if not get_ingested_edition_numbers():
+        return ChatResponse(
+            answer="No newsletter data has been ingested yet. Please ask an admin to run the ingestion pipeline first.",
+            sources=[],
+            session_id=sid,
+        )
 
     cleaned_query, filter_metadata = preprocess_query(message)
     logger.info(
@@ -207,6 +233,7 @@ async def handle_chat(message: str, session_id: str | None) -> ChatResponse:
         if key not in seen:
             seen.add(key)
             sources.append(SourceReference(
+                edition_id=meta.get("edition_id", ""),
                 edition_number=meta.get("edition_number", 0),
                 section_type=meta.get("section_type", ""),
                 section_title=meta.get("section_title", ""),

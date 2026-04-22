@@ -49,16 +49,21 @@ async def run_ingestion(full_reindex: bool = False) -> dict:
         return {"ingested": 0, "skipped": 0, "errors": []}
 
     already_ingested = set() if full_reindex else get_ingested_edition_numbers()
+    to_ingest = [e for e in editions if e.get("edition_number", 0) not in already_ingested]
+    total_to_ingest = len(to_ingest)
+    total_skipped = len(editions) - total_to_ingest
+
+    logger.info(
+        "Found %d editions: %d to ingest, %d already ingested",
+        len(editions), total_to_ingest, total_skipped,
+    )
 
     ingested = 0
-    skipped = 0
+    skipped = total_skipped
     errors = []
 
-    for edition in editions:
+    for idx, edition in enumerate(to_ingest, 1):
         edition_number = edition.get("edition_number", 0)
-        if edition_number in already_ingested:
-            skipped += 1
-            continue
 
         headline = edition.get("headline", "")
         published_at = edition.get("published_at") or edition.get("created_at")
@@ -71,6 +76,7 @@ async def run_ingestion(full_reindex: bool = False) -> dict:
             month = 0
             published_at_str = str(published_at) if published_at else ""
 
+        edition_id = str(edition.get("_id", ""))
         sections = edition.get("sections", [])
         summaries = []
 
@@ -86,6 +92,7 @@ async def run_ingestion(full_reindex: bool = False) -> dict:
                 summaries.append({
                     "text": summary_text,
                     "metadata": {
+                        "edition_id": edition_id,
                         "edition_number": edition_number,
                         "edition_headline": headline,
                         "section_type": section_type,
@@ -103,7 +110,10 @@ async def run_ingestion(full_reindex: bool = False) -> dict:
         if summaries:
             store_section_summaries(summaries)
             ingested += 1
-            logger.info("Ingested edition #%d (%d sections)", edition_number, len(summaries))
+            logger.info(
+                "[%d/%d] Ingested edition #%d (%d sections)",
+                idx, total_to_ingest, edition_number, len(summaries),
+            )
 
     result = {"ingested": ingested, "skipped": skipped, "errors": errors}
     logger.info("Ingestion complete: %s", result)

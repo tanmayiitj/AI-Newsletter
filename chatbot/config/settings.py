@@ -23,7 +23,7 @@ class ChatbotSettings(BaseSettings):
     session_ttl_minutes: int = 30
     conversation_window_size: int = 5
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = ChatbotSettings()

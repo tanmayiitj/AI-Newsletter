@@ -1,6 +1,7 @@
 """Chat and ingestion API routes."""
 
 import logging
+import secrets
 
 from fastapi import APIRouter, Header, HTTPException
 
@@ -12,6 +13,12 @@ from chatbot.ingestion.ingest import run_ingestion
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
+
+
+def _verify_api_key(key: str) -> None:
+    """Validate admin API key using constant-time comparison."""
+    if not secrets.compare_digest(key, settings.admin_api_key):
+        raise HTTPException(status_code=403, detail="Invalid API key")
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -29,8 +36,7 @@ async def ingest(
     full_reindex: bool = False,
 ) -> IngestionResult:
     """Trigger newsletter ingestion into the vector store (admin only)."""
-    if x_api_key != settings.admin_api_key:
-        raise HTTPException(status_code=403, detail="Invalid API key")
+    _verify_api_key(x_api_key)
 
     result = await run_ingestion(full_reindex=full_reindex)
     return IngestionResult(**result)

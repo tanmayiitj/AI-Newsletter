@@ -1,15 +1,34 @@
-"""LangChain RetrievalQA chain for newsletter question answering."""
+"""LangChain retrieval chain for newsletter question answering."""
 
 import logging
 
 from langchain_openai import ChatOpenAI
-from langchain.chains import ConversationalRetrievalChain
-from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.documents import Document
 
 from chatbot.config.settings import settings
 from chatbot.retrieval.vector_store import get_retriever
 
 logger = logging.getLogger(__name__)
+
+# Cached LLM instance (reused across calls — only the retriever filter changes)
+_llm: ChatOpenAI | None = None
+
+
+def _get_llm() -> ChatOpenAI:
+    """Return a cached LLM instance."""
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            temperature=0.3,
+            max_tokens=1024,
+        )
+    return _llm
+
 
 SYSTEM_PROMPT = """You are "AI Pulse Assistant", a helpful chatbot for the AI Pulse Newsletter.
 You answer questions ONLY based on the provided newsletter content.
@@ -20,47 +39,30 @@ Rules:
 - Be concise and factual.
 - If asked about jobs, include role titles, companies, and experience tiers from the context.
 - Do not make up information that is not in the provided context.
-- When listing multiple items, use numbered lists for clarity."""
+- When listing multiple items, use numbered lists for clarity.
 
-HUMAN_PROMPT = """Context from newsletters:
+Chat history:
+{chat_history}
+
+Context from newsletters:
 {context}
 
 Question: {question}"""
 
 
-def build_chain(
-    filter_metadata: dict | None = None,
-    chat_history: list | None = None,
-) -> ConversationalRetrievalChain:
-    """Build a conversational retrieval chain with optional metadata filtering.
+def _format_docs(docs: list[Document]) -> str:
+    """Format retrieved documents into a single context string."""
+    return "\n\n---\n\n".join(doc.page_content for doc in docs)
 
-    Args:
-        filter_metadata: ChromaDB where-clause for temporal/section filtering.
-        chat_history: Not used here directly but the chain supports it.
-    """
-    llm = ChatOpenAI(
-        api_key=settings.openai_api_key,
-        model=settings.openai_model,
-        temperature=0.3,
-        max_tokens=1024,
-    )
 
-    retriever = get_retriever(filter_metadata=filter_metadata, k=5)
-
-    combine_docs_prompt = ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(SYSTEM_PROMPT),
-        HumanMessagePromptTemplate.from_template(HUMAN_PROMPT),
-    ])
-
-    chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=retriever,
-        combine_docs_chain_kwargs={"prompt": combine_docs_prompt},
-        return_source_documents=True,
-        verbose=False,
-    )
-
-    return chain
+def _format_chat_history(history: list[tuple[str, str]]) -> str:
+    """Format chat history tuples into a readable string."""
+    if not history:
+        return "No previous conversation."
+    parts = []
+    for human, ai in history:
+        parts.append(f"Human: {human}\nAssistant: {ai}")
+    return "\n".join(parts)
 
 
 async def ask_question(
@@ -78,14 +80,25 @@ async def ask_question(
     Returns:
         Dict with 'answer' (str) and 'source_documents' (list[Document]).
     """
-    chain = build_chain(filter_metadata=filter_metadata)
+    llm = _get_llm()
+    retriever = get_retriever(filter_metadata=filter_metadata, k=5)
 
-    result = await chain.ainvoke({
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),
+    ])
+
+    # Retrieve documents first so we can return them as sources
+    docs = await retriever.ainvoke(question)
+
+    chain = prompt | llm | StrOutputParser()
+
+    answer = await chain.ainvoke({
+        "context": _format_docs(docs),
+        "chat_history": _format_chat_history(chat_history),
         "question": question,
-        "chat_history": chat_history,
     })
 
     return {
-        "answer": result["answer"],
-        "source_documents": result.get("source_documents", []),
+        "answer": answer,
+        "source_documents": docs,
     }
