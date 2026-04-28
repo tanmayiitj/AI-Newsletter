@@ -333,7 +333,7 @@ The live deployment runs on [Render](https://render.com). To deploy your own ins
 6. Update `GOOGLE_REDIRECT_URI` to your Render service URL (e.g., `https://your-app.onrender.com/auth/callback`) and add it to your Google OAuth client's authorised redirect URIs.
 7. Deploy.
 
-> **ChromaDB persistence on Render:** Render's free tier does not persist disk between deploys. Use a paid Render disk or replace ChromaDB with a cloud-hosted vector database for production.
+> ⚠️ **Warning — ChromaDB persistence on Render:** Render's free tier does **not** persist disk storage between deploys. Every new deployment will wipe the `chroma_data/` directory, requiring a full re-ingest. For production use, either add a **Render Disk** (paid) or replace ChromaDB with a cloud-hosted vector database before deploying.
 
 ### Backend — Railway / Fly.io
 
