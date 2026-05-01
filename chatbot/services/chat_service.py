@@ -145,19 +145,14 @@ def preprocess_query(raw_query: str) -> tuple[str, dict | None]:
             year = now.year
             month = now.month
 
-    # Build ChromaDB filter
+    # Build MongoDB Atlas pre_filter
     filter_dict: dict | None = None
-    if year is not None or month is not None:
-        conditions = []
-        if year is not None:
-            conditions.append({"year": {"$eq": year}})
-        if month is not None:
-            conditions.append({"month": {"$eq": month}})
-
-        if len(conditions) == 1:
-            filter_dict = conditions[0]
-        else:
-            filter_dict = {"$and": conditions}
+    if year is not None and month is not None:
+        filter_dict = {"year": {"$eq": year}, "month": {"$eq": month}}
+    elif year is not None:
+        filter_dict = {"year": {"$eq": year}}
+    elif month is not None:
+        filter_dict = {"month": {"$eq": month}}
 
     # Clean up extra whitespace
     cleaned = " ".join(cleaned.split())

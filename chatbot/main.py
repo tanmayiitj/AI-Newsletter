@@ -21,14 +21,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize ChromaDB on startup."""
+    """Initialize MongoDB Atlas Vector Search on startup."""
     logger.info("Initializing chatbot service...")
     try:
         get_vector_store()
-        logger.info("ChromaDB vector store ready")
+        logger.info("MongoDB Atlas Vector Search ready")
     except Exception as e:
-        logger.error("Failed to initialize ChromaDB: %s", e)
-        logger.warning("Chatbot will start but queries will fail until ChromaDB is available")
+        logger.error("Failed to initialize vector store: %s", e)
+        logger.warning("Chatbot will start but queries will fail until vector store is available")
     yield
     logger.info("Chatbot service shutting down")
 

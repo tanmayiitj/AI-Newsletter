@@ -9,7 +9,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.documents import Document
 
 from chatbot.config.settings import settings
-from chatbot.retrieval.vector_store import get_retriever
+from chatbot.retrieval.vector_store import get_hybrid_retriever, get_vector_retriever
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,12 @@ If the information is not in the provided context, say: "I don't have that infor
 
 Rules:
 - Always cite the edition number (e.g. "Edition #3") when referencing information.
+- Cite the article title and source name when referencing specific information (e.g. "according to TechCrunch").
 - Be concise and factual.
 - If asked about jobs, include role titles, companies, and experience tiers from the context.
 - Do not make up information that is not in the provided context.
 - When listing multiple items, use numbered lists for clarity.
+- If multiple articles from different editions are relevant, reference each.
 
 Chat history:
 {chat_history}
@@ -51,8 +53,18 @@ Question: {question}"""
 
 
 def _format_docs(docs: list[Document]) -> str:
-    """Format retrieved documents into a single context string."""
-    return "\n\n---\n\n".join(doc.page_content for doc in docs)
+    """Format retrieved documents into a single context string with source info."""
+    parts = []
+    for doc in docs:
+        meta = doc.metadata
+        header = (
+            f"[Edition #{meta.get('edition_number', '?')} | "
+            f"{meta.get('section_title', '')} | "
+            f"{meta.get('article_title', '')} | "
+            f"Source: {meta.get('source_name', 'unknown')}]"
+        )
+        parts.append(f"{header}\n{doc.page_content}")
+    return "\n\n---\n\n".join(parts)
 
 
 def _format_chat_history(history: list[tuple[str, str]]) -> str:
@@ -72,23 +84,30 @@ async def ask_question(
 ) -> dict:
     """Ask a question against the newsletter vector store.
 
+    Uses hybrid search (vector + full-text) with fallback to pure vector search.
+
     Args:
         question: The user's question.
         chat_history: List of (human, ai) tuples for conversation context.
-        filter_metadata: Optional ChromaDB filter for temporal queries.
+        filter_metadata: Optional MongoDB pre_filter for temporal queries.
 
     Returns:
         Dict with 'answer' (str) and 'source_documents' (list[Document]).
     """
     llm = _get_llm()
-    retriever = get_retriever(filter_metadata=filter_metadata, k=5)
+
+    # Try hybrid retrieval first, fall back to pure vector if full-text index missing
+    try:
+        retriever = get_hybrid_retriever(filter_metadata=filter_metadata, k=5)
+        docs = await retriever.ainvoke(question)
+    except Exception as e:
+        logger.warning("Hybrid retrieval failed (%s), falling back to vector search", e)
+        retriever = get_vector_retriever(filter_metadata=filter_metadata, k=5)
+        docs = await retriever.ainvoke(question)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
     ])
-
-    # Retrieve documents first so we can return them as sources
-    docs = await retriever.ainvoke(question)
 
     chain = prompt | llm | StrOutputParser()
 

@@ -1,4 +1,4 @@
-"""Ingestion pipeline: MongoDB editions -> summarize -> embed in ChromaDB."""
+"""Ingestion pipeline: MongoDB editions -> scrape articles -> chunk -> embed in MongoDB Atlas."""
 
 import asyncio
 import logging
@@ -8,8 +8,13 @@ import certifi
 from pymongo import AsyncMongoClient
 
 from chatbot.config.settings import settings
-from chatbot.ingestion.summarizer import summarize_section
-from chatbot.ingestion.embedder import get_ingested_edition_numbers, store_section_summaries
+from chatbot.ingestion.article_scraper import scrape_articles_batch
+from chatbot.ingestion.chunker import chunk_article, create_job_document
+from chatbot.ingestion.embedder import (
+    get_ingested_edition_numbers,
+    store_documents,
+    delete_edition_documents,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +30,118 @@ async def _fetch_published_editions(client: AsyncMongoClient) -> list[dict]:
     return await cursor.to_list()
 
 
+def _build_base_metadata(edition: dict, published_at: datetime | None) -> dict:
+    """Build base metadata dict from an edition document."""
+    if isinstance(published_at, datetime):
+        year = published_at.year
+        month = published_at.month
+        published_at_str = published_at.isoformat()
+    else:
+        year = 0
+        month = 0
+        published_at_str = str(published_at) if published_at else ""
+
+    return {
+        "edition_id": str(edition.get("_id", "")),
+        "edition_number": edition.get("edition_number", 0),
+        "edition_headline": edition.get("headline", ""),
+        "published_at": published_at_str,
+        "year": year,
+        "month": month,
+    }
+
+
+async def _ingest_edition(edition: dict) -> tuple[int, list[str]]:
+    """Ingest a single edition: scrape articles, chunk, and embed.
+
+    Returns (num_documents_stored, list_of_errors).
+    """
+    edition_number = edition.get("edition_number", 0)
+    published_at = edition.get("published_at") or edition.get("created_at")
+    base_metadata = _build_base_metadata(edition, published_at)
+
+    sections = edition.get("sections", [])
+    all_documents = []
+    errors = []
+
+    for section in sections:
+        section_type = section.get("section_type", "unknown")
+        section_title = section.get("title", section_type)
+        section_metadata = {
+            **base_metadata,
+            "section_type": section_type,
+            "section_title": section_title,
+        }
+
+        # Handle jobs board separately
+        if section_type == "jobs_board":
+            jobs = section.get("job_listings", [])
+            for job in jobs:
+                try:
+                    doc = create_job_document(job, section_metadata)
+                    all_documents.append(doc)
+                except Exception as e:
+                    errors.append(f"Edition #{edition_number}, job '{job.get('role_title', '')}': {e}")
+            continue
+
+        # For content sections: scrape full articles then chunk
+        content_items = section.get("content_items", [])
+        if not content_items:
+            continue
+
+        # Scrape all articles in this section (with polite delays)
+        scraped = await scrape_articles_batch(content_items)
+
+        for item in content_items:
+            source_url = item.get("source_url", "")
+            article_title = item.get("title", "Untitled")
+
+            # Use scraped full text, or fall back to existing summary
+            full_text = scraped.get(source_url)
+            if full_text:
+                # Prepend title for better semantic context
+                text_to_chunk = f"{article_title}\n\n{full_text}"
+            else:
+                # Fallback: use the summary from MongoDB (at least we have something)
+                summary = item.get("summary", "")
+                if not summary:
+                    continue
+                text_to_chunk = f"{article_title}\n\n{summary}"
+                logger.debug(
+                    "Using fallback summary for '%s' (scrape failed)",
+                    article_title,
+                )
+
+            article_metadata = {
+                **section_metadata,
+                "article_title": article_title,
+                "source_name": item.get("source_name", ""),
+                "source_url": source_url,
+                "source_date": str(item.get("source_date", "")),
+            }
+
+            try:
+                chunks = chunk_article(text_to_chunk, article_metadata)
+                all_documents.extend(chunks)
+            except Exception as e:
+                errors.append(
+                    f"Edition #{edition_number}, article '{article_title}': {e}"
+                )
+
+    # Store all documents for this edition
+    if all_documents:
+        store_documents(all_documents)
+
+    return len(all_documents), errors
+
+
 async def run_ingestion(full_reindex: bool = False) -> dict:
     """Run the full ingestion pipeline.
 
     1. Connect to MongoDB and fetch published editions
-    2. Skip editions already in ChromaDB (unless full_reindex)
-    3. Summarize each section per edition
-    4. Embed and store summaries in ChromaDB
+    2. Skip editions already ingested (unless full_reindex)
+    3. For each edition: scrape articles -> chunk -> embed
+    4. Store in MongoDB Atlas Vector Search
 
     Returns: {"ingested": int, "skipped": int, "errors": list[str]}
     """
@@ -65,55 +175,29 @@ async def run_ingestion(full_reindex: bool = False) -> dict:
     for idx, edition in enumerate(to_ingest, 1):
         edition_number = edition.get("edition_number", 0)
 
-        headline = edition.get("headline", "")
-        published_at = edition.get("published_at") or edition.get("created_at")
-        if isinstance(published_at, datetime):
-            year = published_at.year
-            month = published_at.month
-            published_at_str = published_at.isoformat()
-        else:
-            year = 0
-            month = 0
-            published_at_str = str(published_at) if published_at else ""
+        # For full reindex, delete existing docs first
+        if full_reindex:
+            delete_edition_documents(edition_number)
 
-        edition_id = str(edition.get("_id", ""))
-        sections = edition.get("sections", [])
-        summaries = []
+        try:
+            num_docs, edition_errors = await _ingest_edition(edition)
+            errors.extend(edition_errors)
 
-        for section in sections:
-            section_type = section.get("section_type", "unknown")
-            section_title = section.get("title", section_type)
-            try:
-                summary_text = await summarize_section(
-                    section=section,
-                    edition_number=edition_number,
-                    published_at=published_at_str,
+            if num_docs > 0:
+                ingested += 1
+                logger.info(
+                    "[%d/%d] Ingested edition #%d (%d documents)",
+                    idx, total_to_ingest, edition_number, num_docs,
                 )
-                summaries.append({
-                    "text": summary_text,
-                    "metadata": {
-                        "edition_id": edition_id,
-                        "edition_number": edition_number,
-                        "edition_headline": headline,
-                        "section_type": section_type,
-                        "section_title": section_title,
-                        "published_at": published_at_str,
-                        "year": year,
-                        "month": month,
-                    },
-                })
-            except Exception as e:
-                error_msg = f"Edition #{edition_number}, section '{section_title}': {e}"
-                logger.error("Summarization failed — %s", error_msg)
-                errors.append(error_msg)
-
-        if summaries:
-            store_section_summaries(summaries)
-            ingested += 1
-            logger.info(
-                "[%d/%d] Ingested edition #%d (%d sections)",
-                idx, total_to_ingest, edition_number, len(summaries),
-            )
+            else:
+                logger.warning(
+                    "[%d/%d] Edition #%d produced 0 documents",
+                    idx, total_to_ingest, edition_number,
+                )
+        except Exception as e:
+            error_msg = f"Edition #{edition_number}: {e}"
+            logger.error("Ingestion failed — %s", error_msg)
+            errors.append(error_msg)
 
     result = {"ingested": ingested, "skipped": skipped, "errors": errors}
     logger.info("Ingestion complete: %s", result)

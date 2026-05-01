@@ -15,9 +15,20 @@ class ChatbotSettings(BaseSettings):
 
     # Chatbot-specific
     chatbot_port: int = 8001
-    chroma_persist_dir: str = "./chroma_data"
-    chroma_collection_name: str = "newsletter_sections"
     ingestion_batch_size: int = 10
+
+    # MongoDB Atlas Vector Search
+    mongodb_vector_collection: str = "article_chunks"
+    vector_index_name: str = "vector_index"
+    fulltext_index_name: str = "search_index"
+
+    # Chunking
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+
+    # Article scraping
+    article_max_chars: int = 5000
+    scrape_delay_seconds: float = 1.5
 
     # Session
     session_ttl_minutes: int = 30
