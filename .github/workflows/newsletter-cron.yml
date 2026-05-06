@@ -1,0 +1,60 @@
+name: Generate Newsletter (Twice Weekly)
+
+on:
+  schedule:
+    # Twice a week: Monday & Thursday at 8:00 AM UTC
+    - cron: "0 8 * * 1,4"
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  generate-and-ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Trigger newsletter generation
+        run: |
+          echo "Triggering newsletter generation..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.BACKEND_URL }}/api/v1/newsletter/generate" \
+            -H "X-API-Key: ${{ secrets.ADMIN_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            --max-time 600)
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "Newsletter generated successfully!"
+          elif [ "$HTTP_CODE" = "409" ]; then
+            echo "Generation already in progress, skipping."
+          else
+            echo "Generation failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Trigger RAG ingestion
+        run: |
+          echo "Triggering chatbot ingestion..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.BACKEND_URL }}/api/v1/ingest" \
+            -H "X-API-Key: ${{ secrets.ADMIN_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            --max-time 300)
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Ingestion completed successfully!"
+          else
+            echo "Ingestion failed with status $HTTP_CODE"
+            exit 1
+          fi
