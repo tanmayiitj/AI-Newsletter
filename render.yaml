@@ -33,7 +33,6 @@ services:
   - type: cron
     name: ai-newsletter-cron
     runtime: python
-    plan: free
     schedule: "0 8 * * 1,4"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m cron_worker
