@@ -28,15 +28,15 @@ STATIC_DIR = BASE_DIR / "frontend" / "static"
 
 @asynccontextmanager
 async def combined_lifespan(app: FastAPI):
-    """Combined lifespan: MongoDB + ChromaDB init + auto-ingest."""
+    """Combined lifespan: MongoDB + vector store init + auto-ingest."""
     async with db_lifespan(app):
         try:
             get_vector_store()
-            logger.info("ChromaDB vector store ready")
+            logger.info("MongoDB Atlas Vector Search ready")
             result = await run_ingestion(full_reindex=False)
             logger.info("Auto-ingest complete: %s", result)
         except Exception as e:
-            logger.error("ChromaDB/ingest init failed: %s", e)
+            logger.error("Vector store/ingest init failed: %s", e)
             logger.warning("Chatbot queries may fail until data is ingested")
         yield
 
