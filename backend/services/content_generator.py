@@ -17,9 +17,15 @@ from backend.models.newsletter import (
 )
 from backend.services.llm_client import LLMServiceError, generate_structured
 from backend.services.jobs_service import generate_job_listings
-from backend.services.news_scraper import scrape_ai_news, format_articles_for_prompt
+from backend.services.news_scraper import (
+    scrape_ai_news_by_section,
+    format_articles_for_prompt,
+    ScrapedArticle,
+)
 
 logger = logging.getLogger(__name__)
+
+FULL_TEXT_MAX_CHARS = 15000
 
 
 # Pydantic models for LLM structured output responses
@@ -100,6 +106,77 @@ SECTION_ORDER: list[SectionType] = [
 ]
 
 PLACEHOLDER_DESCRIPTION = "Content is being curated. Check back soon for updates."
+
+
+async def _get_used_urls() -> set[str]:
+    """Fetch all source_url values from previously published editions."""
+    from backend.database.connection import get_collection
+    collection = get_collection("editions")
+    cursor = collection.find(
+        {"status": "published"},
+        projection={"sections.content_items.source_url": 1},
+    )
+    used_urls: set[str] = set()
+    async for edition in cursor:
+        for section in edition.get("sections", []):
+            for item in section.get("content_items", []):
+                url = item.get("source_url", "")
+                if url:
+                    used_urls.add(url)
+    return used_urls
+
+
+def _filter_articles(
+    articles: list[ScrapedArticle],
+    used_urls: set[str],
+) -> list[ScrapedArticle]:
+    """Remove articles whose URLs were used in previous editions."""
+    return [a for a in articles if a.url and a.url not in used_urls]
+
+
+async def _scrape_full_text(url: str) -> str | None:
+    """Scrape full article text from a URL using trafilatura + BeautifulSoup fallback."""
+    import httpx
+    import trafilatura
+    from bs4 import BeautifulSoup
+
+    if not url or not url.startswith("http"):
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            html = resp.text
+    except Exception as e:
+        logger.warning("Failed to fetch %s: %s", url, e)
+        return None
+
+    text = trafilatura.extract(html, include_comments=False, include_tables=False, no_fallback=False)
+    if text and len(text.strip()) > 100:
+        return text.strip()[:FULL_TEXT_MAX_CHARS]
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in ["article", "main"]:
+        el = soup.find(tag)
+        if el:
+            t = el.get_text(separator="\n", strip=True)
+            if len(t) > 100:
+                return t[:FULL_TEXT_MAX_CHARS]
+
+    return None
+
+
+async def _populate_full_text(section: NewsletterSection) -> None:
+    """Scrape full text for each content item in a section."""
+    for item in section.content_items:
+        text = await _scrape_full_text(item.source_url)
+        if text:
+            item.full_text = text
+            logger.info("        Scraped %d chars for '%s'", len(text), item.title[:50])
+        else:
+            item.full_text = item.summary
+            logger.warning("        Scrape failed for '%s', using summary", item.title[:50])
 
 
 async def generate_section(
@@ -243,21 +320,42 @@ async def generate_full_edition(edition_number: int) -> NewsletterEdition:
     logger.info("Sections to generate: %d", total_sections)
     logger.info("-"*60)
 
-    # Step 1: Scrape real news from the web
-    logger.info("[SCRAPE] Fetching real AI news from RSS feeds ...")
-    scraped_articles = await scrape_ai_news()
-    news_context = format_articles_for_prompt(scraped_articles)
-    if scraped_articles:
-        logger.info("[SCRAPE] Got %d real articles as context for LLM", len(scraped_articles))
-    else:
-        logger.warning("[SCRAPE] No articles fetched — LLM will use its own knowledge")
+    # Step 1: Fetch previously used URLs for dedup
+    logger.info("[DEDUP] Fetching previously used URLs ...")
+    used_urls = await _get_used_urls()
+    logger.info("[DEDUP] Found %d previously used URLs", len(used_urls))
+
+    # Step 2: Scrape news from section-specific RSS feed pools
+    logger.info("[SCRAPE] Fetching AI news from section-specific feed pools ...")
+    articles_by_section = await scrape_ai_news_by_section()
     logger.info("-"*60)
 
-    # Step 2: Generate all sections sequentially (to stay within rate limits)
+    # Step 3: Generate all sections sequentially (to stay within rate limits)
     sections: list[NewsletterSection] = []
     for i, section_type in enumerate(SECTION_ORDER, start=1):
         logger.info("[%d/%d] Generating section: %s ...", i, total_sections, SECTION_TITLES[section_type])
-        section = await generate_section(section_type, i, news_context=news_context)
+
+        if section_type == SectionType.JOBS_BOARD:
+            section = await _generate_jobs_section(i, SECTION_TITLES[section_type])
+        else:
+            # Get this section's articles, filter out previously used URLs
+            section_articles = articles_by_section.get(section_type, [])
+            filtered_articles = _filter_articles(section_articles, used_urls)
+            logger.info("        %d articles available, %d after dedup",
+                        len(section_articles), len(filtered_articles))
+
+            news_context = format_articles_for_prompt(filtered_articles)
+            section = await generate_section(section_type, i, news_context=news_context)
+
+            # Scrape full text for selected articles
+            if section.content_items:
+                logger.info("        Scraping full text for %d articles ...", len(section.content_items))
+                await _populate_full_text(section)
+
+                # Add newly used URLs to the exclusion set to prevent reuse in later sections
+                for item in section.content_items:
+                    used_urls.add(item.source_url)
+
         sections.append(section)
 
     logger.info("-"*60)

@@ -1,66 +1,83 @@
-"""Chunk article text into LangChain Documents for vector embedding."""
+"""Create vector store documents from newsletter articles."""
 
+import calendar
 import logging
+from datetime import datetime
 
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from chatbot.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _get_splitter() -> RecursiveCharacterTextSplitter:
-    """Return a text splitter configured from settings."""
-    return RecursiveCharacterTextSplitter(
-        chunk_size=settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap,
-        length_function=len,
-        separators=["\n\n", "\n", ". ", ", ", " ", ""],
-    )
+def _build_header(title: str, source_name: str, edition_number: int, published_at: datetime | None) -> str:
+    """Build the contextual header prepended to every document."""
+    if isinstance(published_at, datetime):
+        month_name = calendar.month_abbr[published_at.month]
+        year = published_at.year
+    else:
+        month_name = "Unknown"
+        year = ""
+    return f"Article: {title} | Source: {source_name}\nEdition #{edition_number} ({month_name} {year})\n\n"
 
 
-def chunk_article(
+def create_article_document(
+    title: str,
+    source_name: str,
+    edition_number: int,
+    published_at: datetime | None,
     text: str,
-    metadata: dict,
 ) -> list[Document]:
-    """Split article text into chunks and attach metadata to each.
+    """Create one or more Documents from an article.
+
+    If header + text ≤ max_doc_chars, returns 1 Document.
+    If longer, splits at exact max_doc_chars boundaries with header on each.
 
     Args:
-        text: Full article text.
-        metadata: Base metadata dict (edition_number, section_type, etc.).
-                  Will be copied and augmented with chunk_index and total_chunks.
+        title: Article title.
+        source_name: Publisher name (e.g., "TechCrunch").
+        edition_number: Newsletter edition number.
+        published_at: Edition publication date.
+        text: Full article text (or summary fallback).
 
     Returns:
-        List of LangChain Document objects.
+        List of LangChain Documents with edition_number as only metadata.
     """
     if not text or not text.strip():
         return []
 
-    splitter = _get_splitter()
-    chunks = splitter.split_text(text)
+    header = _build_header(title, source_name, edition_number, published_at)
+    max_chars = settings.max_doc_chars
+    metadata = {"edition_number": edition_number}
 
+    full_content = header + text
+    if len(full_content) <= max_chars:
+        return [Document(page_content=full_content, metadata=metadata)]
+
+    # Split at exact max_chars boundaries, prepend header to each part
     documents = []
-    for i, chunk in enumerate(chunks):
-        doc_metadata = {
-            **metadata,
-            "chunk_index": i,
-            "total_chunks": len(chunks),
-        }
-        documents.append(Document(page_content=chunk, metadata=doc_metadata))
+    content_per_part = max_chars - len(header)
+    for i in range(0, len(text), content_per_part):
+        part = text[i : i + content_per_part]
+        documents.append(Document(page_content=header + part, metadata=metadata.copy()))
 
     return documents
 
 
 def create_job_document(
     job: dict,
-    metadata: dict,
+    edition_number: int,
+    published_at: datetime | None,
 ) -> Document:
-    """Create a single Document from a job listing (no chunking needed).
+    """Create a single Document from a job listing.
+
+    Uses the same header format as articles for uniform vector store documents.
 
     Args:
         job: Job listing dict with role_title, company_name, etc.
-        metadata: Base metadata dict from the edition/section.
+        edition_number: Newsletter edition number.
+        published_at: Edition publication date.
 
     Returns:
         A single LangChain Document.
@@ -72,23 +89,19 @@ def create_job_document(
     desc = job.get("description", "")
     url = job.get("apply_url", "")
 
-    text = (
-        f"Job: {role} at {company}\n"
-        f"Location: {location}\n"
-        f"Experience: {exp}\n"
-        f"Description: {desc}"
-    )
+    if isinstance(published_at, datetime):
+        month_name = calendar.month_abbr[published_at.month]
+        year = published_at.year
+    else:
+        month_name = "Unknown"
+        year = ""
+
+    header = f"Job: {role} at {company} | Edition #{edition_number} ({month_name} {year})\n\n"
+    body = f"Location: {location}\nExperience: {exp}\nDescription: {desc}"
     if url:
-        text += f"\nApply: {url}"
+        body += f"\nApply: {url}"
 
-    job_metadata = {
-        **metadata,
-        "role_title": role,
-        "company_name": company,
-        "location_type": location,
-        "experience_tier": exp,
-        "chunk_index": 0,
-        "total_chunks": 1,
-    }
-
-    return Document(page_content=text, metadata=job_metadata)
+    return Document(
+        page_content=header + body,
+        metadata={"edition_number": edition_number},
+    )

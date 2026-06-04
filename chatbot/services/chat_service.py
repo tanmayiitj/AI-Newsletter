@@ -1,4 +1,4 @@
-"""Chat service: session management, temporal preprocessing, and orchestration."""
+"""Chat service: session management and orchestration."""
 
 import logging
 import re
@@ -15,33 +15,6 @@ logger = logging.getLogger(__name__)
 
 # In-memory session store: session_id -> {"history": [...], "last_active": datetime}
 _sessions: dict[str, dict[str, Any]] = {}
-
-MONTH_MAP = {
-    "january": 1, "february": 2, "march": 3, "april": 4,
-    "may": 5, "june": 6, "july": 7, "august": 8,
-    "september": 9, "october": 10, "november": 11, "december": 12,
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4,
-    "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9,
-    "oct": 10, "nov": 11, "dec": 12,
-}
-
-# Patterns to detect temporal references in user queries
-_MONTH_PATTERN = re.compile(
-    r"\b(" + "|".join(MONTH_MAP.keys()) + r")\b",
-    re.IGNORECASE,
-)
-_YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
-_RELATIVE_PATTERNS = {
-    re.compile(r"\blast\s+month\b", re.IGNORECASE): -1,
-    re.compile(r"\bthis\s+month\b", re.IGNORECASE): 0,
-}
-
-# Only apply default current-month filter when query contains temporal intent
-_TEMPORAL_KEYWORDS = re.compile(
-    r"\b(news|happened|latest|recent|update|trending|this\s+week|this\s+month"
-    r"|last\s+month|last\s+week|new\s+tools|new\s+jobs|listed|posted)\b",
-    re.IGNORECASE,
-)
 
 
 def _cleanup_expired_sessions() -> None:
@@ -92,82 +65,19 @@ def _update_session(session_id: str, human_msg: str, ai_msg: str) -> None:
         return
     history = _sessions[session_id]["history"]
     history.append((human_msg, ai_msg))
-    # Keep only the last N turns
     max_turns = settings.conversation_window_size
     if len(history) > max_turns:
         _sessions[session_id]["history"] = history[-max_turns:]
     _sessions[session_id]["last_active"] = datetime.now(timezone.utc)
 
 
-def preprocess_query(raw_query: str) -> tuple[str, dict | None]:
-    """Extract temporal filters from the query.
-
-    Returns:
-        (cleaned_query, metadata_filter) where metadata_filter is a ChromaDB
-        where-clause dict or None if no filter needed.
-    """
-    now = datetime.now(timezone.utc)
-    year: int | None = None
-    month: int | None = None
-    cleaned = raw_query
-
-    # Check relative patterns (this month, last month)
-    for pattern, offset in _RELATIVE_PATTERNS.items():
-        match = pattern.search(raw_query)
-        if match:
-            target_month = now.month + offset
-            target_year = now.year
-            if target_month <= 0:
-                target_month += 12
-                target_year -= 1
-            year = target_year
-            month = target_month
-            cleaned = pattern.sub("", cleaned).strip()
-            break
-
-    # Check explicit month name
-    if month is None:
-        month_match = _MONTH_PATTERN.search(raw_query)
-        if month_match:
-            month = MONTH_MAP[month_match.group(1).lower()]
-            cleaned = _MONTH_PATTERN.sub("", cleaned).strip()
-
-    # Check explicit year
-    year_match = _YEAR_PATTERN.search(raw_query)
-    if year_match:
-        year = int(year_match.group(1))
-        cleaned = _YEAR_PATTERN.sub("", cleaned).strip()
-
-    # Default: if no temporal reference, only apply current month filter
-    # when the query has temporal intent (e.g. "news", "latest", "happened")
-    if month is None and year is None:
-        if _TEMPORAL_KEYWORDS.search(raw_query):
-            year = now.year
-            month = now.month
-
-    # Build MongoDB Atlas pre_filter
-    filter_dict: dict | None = None
-    if year is not None and month is not None:
-        filter_dict = {"year": {"$eq": year}, "month": {"$eq": month}}
-    elif year is not None:
-        filter_dict = {"year": {"$eq": year}}
-    elif month is not None:
-        filter_dict = {"month": {"$eq": month}}
-
-    # Clean up extra whitespace
-    cleaned = " ".join(cleaned.split())
-
-    return cleaned, filter_dict
-
-
 async def handle_chat(message: str, session_id: str | None) -> ChatResponse:
     """Process a chat message end-to-end.
 
     1. Get or create session
-    2. Preprocess query for temporal filters
-    3. Run RAG chain
-    4. Update session history
-    5. Return structured response
+    2. Run RAG chain (no preprocessing — query goes directly to vector search)
+    3. Update session history
+    4. Return structured response
     """
     sid, chat_history = get_or_create_session(session_id)
 
@@ -179,61 +89,32 @@ async def handle_chat(message: str, session_id: str | None) -> ChatResponse:
             session_id=sid,
         )
 
-    cleaned_query, filter_metadata = preprocess_query(message)
-    logger.info(
-        "Query: '%s' -> cleaned: '%s', filter: %s",
-        message, cleaned_query, filter_metadata,
-    )
+    logger.info("Query: '%s'", message)
 
     try:
         result = await ask_question(
-            question=cleaned_query,
+            question=message,
             chat_history=chat_history,
-            filter_metadata=filter_metadata,
         )
     except Exception as e:
         logger.error("RAG chain error: %s", e)
-        # If filtered query fails (no data for that month), try without filter
-        if filter_metadata:
-            logger.info("Retrying without temporal filter")
-            try:
-                result = await ask_question(
-                    question=cleaned_query,
-                    chat_history=chat_history,
-                    filter_metadata=None,
-                )
-            except Exception as e2:
-                logger.error("RAG chain retry error: %s", e2)
-                return ChatResponse(
-                    answer="Sorry, I encountered an error processing your question. Please try again.",
-                    sources=[],
-                    session_id=sid,
-                )
-        else:
-            return ChatResponse(
-                answer="Sorry, I encountered an error processing your question. Please try again.",
-                sources=[],
-                session_id=sid,
-            )
+        return ChatResponse(
+            answer="Sorry, I encountered an error processing your question. Please try again.",
+            sources=[],
+            session_id=sid,
+        )
 
     answer = result["answer"]
     source_docs = result.get("source_documents", [])
 
-    # Deduplicate sources by edition_number + section_type
-    seen = set()
+    # Deduplicate sources by unique edition_number
+    seen_editions: set[int] = set()
     sources = []
     for doc in source_docs:
-        meta = doc.metadata
-        key = (meta.get("edition_number"), meta.get("section_type"))
-        if key not in seen:
-            seen.add(key)
-            sources.append(SourceReference(
-                edition_id=meta.get("edition_id", ""),
-                edition_number=meta.get("edition_number", 0),
-                section_type=meta.get("section_type", ""),
-                section_title=meta.get("section_title", ""),
-                published_at=meta.get("published_at", ""),
-            ))
+        edition_num = doc.metadata.get("edition_number", 0)
+        if edition_num not in seen_editions:
+            seen_editions.add(edition_num)
+            sources.append(SourceReference(edition_number=edition_num))
 
     _update_session(sid, message, answer)
 

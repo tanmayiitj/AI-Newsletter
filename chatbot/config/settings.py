@@ -20,15 +20,12 @@ class ChatbotSettings(BaseSettings):
     # MongoDB Atlas Vector Search
     mongodb_vector_collection: str = "article_chunks"
     vector_index_name: str = "vector_index"
-    fulltext_index_name: str = "search_index"
 
-    # Chunking
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    # Embedding
+    embedding_model: str = "text-embedding-3-small"
 
-    # Article scraping
-    article_max_chars: int = 5000
-    scrape_delay_seconds: float = 1.5
+    # Document creation
+    max_doc_chars: int = 7000
 
     # Session
     session_ttl_minutes: int = 30

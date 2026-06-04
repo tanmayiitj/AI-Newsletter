@@ -35,6 +35,7 @@ chroma_data/
 .specify/
 .github/agents/
 .github/prompts/
+.github/copilot*.md
 
 # Design specs (internal docs)
 specs/

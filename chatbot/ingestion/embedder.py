@@ -32,7 +32,10 @@ def get_vector_store() -> MongoDBAtlasVectorSearch:
     if _vector_store is None:
         client = _get_mongo_client()
         collection = client[settings.mongodb_db_name][settings.mongodb_vector_collection]
-        embeddings = OpenAIEmbeddings(api_key=settings.openai_api_key)
+        embeddings = OpenAIEmbeddings(
+            api_key=settings.openai_api_key,
+            model=settings.embedding_model,
+        )
         _vector_store = MongoDBAtlasVectorSearch(
             collection=collection,
             embedding=embeddings,

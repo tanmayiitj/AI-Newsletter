@@ -37,6 +37,7 @@ class ContentItem(BaseModel):
     source_name: str = Field(..., min_length=1)
     relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
     source_date: Optional[datetime] = None
+    full_text: Optional[str] = None
 
 
 class NewsletterSection(BaseModel):

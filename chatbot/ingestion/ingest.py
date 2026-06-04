@@ -1,22 +1,24 @@
-"""Ingestion pipeline: MongoDB editions -> scrape articles -> chunk -> embed in MongoDB Atlas."""
+"""Ingestion pipeline: MongoDB editions -> create documents -> embed in MongoDB Atlas."""
 
 import asyncio
 import logging
 from datetime import datetime
 
 import certifi
-from pymongo import AsyncMongoClient
+from pymongo import AsyncMongoClient, MongoClient
 
 from chatbot.config.settings import settings
-from chatbot.ingestion.article_scraper import scrape_articles_batch
-from chatbot.ingestion.chunker import chunk_article, create_job_document
+from chatbot.ingestion.chunker import create_article_document, create_job_document
 from chatbot.ingestion.embedder import (
     get_ingested_edition_numbers,
     store_documents,
-    delete_edition_documents,
+    get_collection,
+    get_vector_store,
 )
 
 logger = logging.getLogger(__name__)
+
+MIN_EDITION_NUMBER = 7  # Skip editions 1-6 (hallucinated/fake URLs)
 
 
 async def _fetch_published_editions(client: AsyncMongoClient) -> list[dict]:
@@ -30,35 +32,13 @@ async def _fetch_published_editions(client: AsyncMongoClient) -> list[dict]:
     return await cursor.to_list()
 
 
-def _build_base_metadata(edition: dict, published_at: datetime | None) -> dict:
-    """Build base metadata dict from an edition document."""
-    if isinstance(published_at, datetime):
-        year = published_at.year
-        month = published_at.month
-        published_at_str = published_at.isoformat()
-    else:
-        year = 0
-        month = 0
-        published_at_str = str(published_at) if published_at else ""
-
-    return {
-        "edition_id": str(edition.get("_id", "")),
-        "edition_number": edition.get("edition_number", 0),
-        "edition_headline": edition.get("headline", ""),
-        "published_at": published_at_str,
-        "year": year,
-        "month": month,
-    }
-
-
 async def _ingest_edition(edition: dict) -> tuple[int, list[str]]:
-    """Ingest a single edition: scrape articles, chunk, and embed.
+    """Ingest a single edition: create documents from stored content and embed.
 
     Returns (num_documents_stored, list_of_errors).
     """
     edition_number = edition.get("edition_number", 0)
     published_at = edition.get("published_at") or edition.get("created_at")
-    base_metadata = _build_base_metadata(edition, published_at)
 
     sections = edition.get("sections", [])
     all_documents = []
@@ -66,63 +46,38 @@ async def _ingest_edition(edition: dict) -> tuple[int, list[str]]:
 
     for section in sections:
         section_type = section.get("section_type", "unknown")
-        section_title = section.get("title", section_type)
-        section_metadata = {
-            **base_metadata,
-            "section_type": section_type,
-            "section_title": section_title,
-        }
 
-        # Handle jobs board separately
+        # Handle jobs board
         if section_type == "jobs_board":
             jobs = section.get("job_listings", [])
             for job in jobs:
                 try:
-                    doc = create_job_document(job, section_metadata)
+                    doc = create_job_document(job, edition_number, published_at)
                     all_documents.append(doc)
                 except Exception as e:
                     errors.append(f"Edition #{edition_number}, job '{job.get('role_title', '')}': {e}")
             continue
 
-        # For content sections: scrape full articles then chunk
+        # For content sections: use stored full_text or fallback to summary
         content_items = section.get("content_items", [])
-        if not content_items:
-            continue
-
-        # Scrape all articles in this section (with polite delays)
-        scraped = await scrape_articles_batch(content_items)
-
         for item in content_items:
-            source_url = item.get("source_url", "")
             article_title = item.get("title", "Untitled")
+            source_name = item.get("source_name", "Unknown")
 
-            # Use scraped full text, or fall back to existing summary
-            full_text = scraped.get(source_url)
-            if full_text:
-                # Prepend title for better semantic context
-                text_to_chunk = f"{article_title}\n\n{full_text}"
-            else:
-                # Fallback: use the summary from MongoDB (at least we have something)
-                summary = item.get("summary", "")
-                if not summary:
-                    continue
-                text_to_chunk = f"{article_title}\n\n{summary}"
-                logger.debug(
-                    "Using fallback summary for '%s' (scrape failed)",
-                    article_title,
-                )
-
-            article_metadata = {
-                **section_metadata,
-                "article_title": article_title,
-                "source_name": item.get("source_name", ""),
-                "source_url": source_url,
-                "source_date": str(item.get("source_date", "")),
-            }
+            # Use full_text if available, otherwise fall back to summary
+            text = item.get("full_text") or item.get("summary", "")
+            if not text:
+                continue
 
             try:
-                chunks = chunk_article(text_to_chunk, article_metadata)
-                all_documents.extend(chunks)
+                docs = create_article_document(
+                    title=article_title,
+                    source_name=source_name,
+                    edition_number=edition_number,
+                    published_at=published_at,
+                    text=text,
+                )
+                all_documents.extend(docs)
             except Exception as e:
                 errors.append(
                     f"Edition #{edition_number}, article '{article_title}': {e}"
@@ -135,36 +90,60 @@ async def _ingest_edition(edition: dict) -> tuple[int, list[str]]:
     return len(all_documents), errors
 
 
+def _drop_and_recreate_collection() -> None:
+    """Drop the vector store collection and recreate the vector search index."""
+    logger.info("Dropping collection '%s' for full reindex ...", settings.mongodb_vector_collection)
+    collection = get_collection()
+    collection.drop()
+    logger.info("Collection dropped. Recreating vector search index ...")
+
+    store = get_vector_store()
+    try:
+        store.create_vector_search_index(dimensions=1536, wait_until_complete=60)
+        logger.info("Vector search index recreated.")
+    except Exception as e:
+        logger.warning("Could not auto-create vector index (may need manual creation): %s", e)
+
+
 async def run_ingestion(full_reindex: bool = False) -> dict:
     """Run the full ingestion pipeline.
 
     1. Connect to MongoDB and fetch published editions
-    2. Skip editions already ingested (unless full_reindex)
-    3. For each edition: scrape articles -> chunk -> embed
+    2. Skip editions < 7 and already ingested (unless full_reindex)
+    3. For each edition: create documents from stored content -> embed
     4. Store in MongoDB Atlas Vector Search
 
     Returns: {"ingested": int, "skipped": int, "errors": list[str]}
     """
     logger.info("Starting ingestion pipeline (full_reindex=%s)", full_reindex)
 
+    if full_reindex:
+        _drop_and_recreate_collection()
+
     client = AsyncMongoClient(settings.mongodb_uri, tlsCAFile=certifi.where())
     try:
         await client.admin.command("ping")
         editions = await _fetch_published_editions(client)
     finally:
-        client.close()
+        await client.aclose()
 
     if not editions:
         logger.info("No published editions found")
         return {"ingested": 0, "skipped": 0, "errors": []}
 
+    # Filter to editions >= MIN_EDITION_NUMBER
+    eligible = [e for e in editions if e.get("edition_number", 0) >= MIN_EDITION_NUMBER]
+    skipped_old = len(editions) - len(eligible)
+    if skipped_old:
+        logger.info("Skipped %d editions below #%d", skipped_old, MIN_EDITION_NUMBER)
+
     already_ingested = set() if full_reindex else get_ingested_edition_numbers()
-    to_ingest = [e for e in editions if e.get("edition_number", 0) not in already_ingested]
+    to_ingest = [e for e in eligible if e.get("edition_number", 0) not in already_ingested]
     total_to_ingest = len(to_ingest)
-    total_skipped = len(editions) - total_to_ingest
+    total_skipped = len(eligible) - total_to_ingest + skipped_old
 
     logger.info(
-        "Found %d editions: %d to ingest, %d already ingested",
+        "Found %d editions: %d to ingest, %d skipped",
         len(editions), total_to_ingest, total_skipped,
     )
 
@@ -174,10 +153,6 @@ async def run_ingestion(full_reindex: bool = False) -> dict:
 
     for idx, edition in enumerate(to_ingest, 1):
         edition_number = edition.get("edition_number", 0)
-
-        # For full reindex, delete existing docs first
-        if full_reindex:
-            delete_edition_documents(edition_number)
 
         try:
             num_docs, edition_errors = await _ingest_edition(edition)

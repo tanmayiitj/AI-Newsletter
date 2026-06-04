@@ -28,11 +28,7 @@ class ChatRequest(BaseModel):
 class SourceReference(BaseModel):
     """A reference to the newsletter source that was used to answer."""
 
-    edition_id: str = ""
     edition_number: int
-    section_type: str
-    section_title: str
-    published_at: str
 
 
 class ChatResponse(BaseModel):
