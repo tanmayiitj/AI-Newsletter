@@ -2,12 +2,11 @@
 
 > An AI-powered weekly newsletter platform that automatically curates the latest AI industry news, tools, and career opportunities — with an integrated RAG chatbot for conversational Q&A over all archived editions.
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.128-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas%20Vector%20Search-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
 [![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?logo=openai&logoColor=white)](https://platform.openai.com/)
 [![LangChain](https://img.shields.io/badge/LangChain-RAG-1C3C3C?logo=chainlink&logoColor=white)](https://www.langchain.com/)
-[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-FF6F00)](https://www.trychroma.com/)
 
 ---
 
@@ -21,11 +20,12 @@
 
 **AI Pulse Newsletter** is a full-stack, production-ready platform for generating, publishing, and interacting with AI-curated newsletters. It solves the problem of information overload in the fast-moving AI industry by automatically:
 
-1. **Scraping** the latest AI news from 7 top RSS feeds (TechCrunch, VentureBeat, WIRED, etc.) and live AI/ML job listings from RemoteOK and Arbeitnow.
-2. **Curating** that raw content through OpenAI's GPT models into five structured newsletter sections, each with an AI-generated preview summary.
-3. **Publishing** each edition to a responsive web UI with light, dark, and warm themes, a full archive with search, and shareable individual edition pages.
-4. **Delivering** newsletters directly to a reader's own Gmail inbox (via the Gmail API) after they log in with Google OAuth.
-5. **Answering questions** about any published edition through an embedded RAG chatbot, powered by LangChain, ChromaDB, and OpenAI.
+1. **Scraping** the latest AI news from 20 section-specific RSS feeds (TechCrunch, WIRED, The Decoder, Anthropic, Hugging Face, IEEE Spectrum, etc.) and live AI/ML job listings from RemoteOK and Arbeitnow.
+2. **Curating** that raw content through OpenAI's GPT models into five structured newsletter sections, with cross-edition URL deduplication to ensure every article is unique.
+3. **Enriching** each selected article by scraping its full text at generation time (trafilatura + BeautifulSoup), storing rich content directly in MongoDB for the RAG pipeline.
+4. **Publishing** each edition to a responsive web UI with light, dark, and warm themes, a full archive with search, and shareable individual edition pages.
+5. **Delivering** newsletters directly to a reader's own Gmail inbox (via the Gmail API) after they log in with Google OAuth.
+6. **Answering questions** about any published edition through an embedded RAG chatbot, powered by LangChain, MongoDB Atlas Vector Search with MMR retrieval, and OpenAI.
 
 **Who it is for:** AI professionals, researchers, product teams, and anyone who wants a curated, structured weekly digest of what is happening in AI — without manually sifting through dozens of sources.
 
@@ -34,7 +34,10 @@
 ## ✨ Features
 
 ### Newsletter Platform
-- **AI-powered content generation** — scrapes real articles from 7 RSS feeds and generates 5 curated sections using OpenAI GPT
+- **AI-powered content generation** — scrapes real articles from 20 section-specific RSS feeds and generates 5 curated sections using OpenAI GPT
+- **Section-specific feed pools** — each newsletter section (Trending Topics, Top Developments, Corporate Tools, Future Trends) draws from its own dedicated set of RSS feeds, eliminating cross-section article duplication
+- **Cross-edition deduplication** — previously used article URLs are automatically excluded from future editions
+- **Full-text scraping at generation time** — article full text is scraped and stored in MongoDB when editions are created, not at RAG ingestion time
 - **Real job listings** — fetches AI/ML roles from RemoteOK and Arbeitnow with keyword-based relevance filtering
 - **Five newsletter sections** — Trending Topics, Top Developments, Corporate AI Tools, Future Requirements & Trends, AI Jobs Board
 - **AI-generated section previews** — each section includes a one-sentence description shown in collapsed state
@@ -46,12 +49,14 @@
 - **Responsive design** — mobile-first layout served as Jinja2 templates
 
 ### RAG Chatbot
-- **Conversational Q&A** — ask any question about newsletter content; the chatbot answers based solely on published editions
+- **Conversational Q&A** — ask any question about newsletter content; the chatbot answers with citations from published editions
+- **Whole-article embedding** — articles are embedded as complete documents (not small chunks), with contextual headers baked into each document for better semantic matching
+- **MMR retrieval** — Maximal Marginal Relevance ensures diverse results across different sources and topics, not 5 chunks of the same article
 - **Floating chat widget** — bottom-right icon embedded on every page, no page reload required
-- **Temporal query detection** — understands time references like "AI news in March" or "last month"
-- **Source citations** — every answer links back to the source edition and section
+- **Source citations** — every answer references edition numbers and source names
+- **Off-topic handling** — declines non-AI questions; for mixed queries, answers only the AI-relevant part
 - **Conversation memory** — sliding window of the last 5 turns, TTL-based session expiry
-- **Auto-ingestion on startup** — new editions are automatically embedded into ChromaDB when the backend starts
+- **Cost-optimized** — uses `text-embedding-3-small` (5x cheaper than ada-002) with minimal metadata (only `edition_number`)
 
 ---
 
@@ -74,16 +79,16 @@ graph TD
     end
 
     subgraph "External Services"
-        OpenAI["☁️ OpenAI API\n(GPT-4o-mini)"]
-        MongoDB["🗄️ MongoDB Atlas\n(editions collection)"]
+        OpenAI["☁️ OpenAI API\n(GPT-4o-mini + embeddings)"]
+        MongoDB["🗄️ MongoDB Atlas\n(editions + vector search)"]
         Gmail["📧 Gmail API\n(OAuth send)"]
-        RSSFeeds["📰 RSS Feeds\n(7 sources)"]
+        RSSFeeds["📰 RSS Feeds\n(20 sources, 4 pools)"]
         JobAPIs["💼 Job APIs\n(RemoteOK + Arbeitnow)"]
         Google["🔑 Google OAuth"]
     end
 
-    subgraph "Local Storage"
-        ChromaDB["📦 ChromaDB\n(chroma_data/)"]
+    subgraph "Vector Store"
+        AtlasVS["🔍 MongoDB Atlas\nVector Search\n(article_chunks)"]
     end
 
     User -->|"HTTP requests"| Pages
@@ -99,10 +104,10 @@ graph TD
     ShareAPI -->|"sends email"| Gmail
     AuthAPI -->|"OAuth exchange"| Google
     ChatAPI -->|"RAG chain"| OpenAI
-    ChatAPI -->|"vector search"| ChromaDB
+    ChatAPI -->|"MMR vector search"| AtlasVS
     IngestAPI -->|"reads editions"| MongoDB
-    IngestAPI -->|"summarises"| OpenAI
-    IngestAPI -->|"stores embeddings"| ChromaDB
+    IngestAPI -->|"embeds (text-embedding-3-small)"| OpenAI
+    IngestAPI -->|"stores documents"| AtlasVS
 ```
 
 ### Layer Descriptions
@@ -111,12 +116,12 @@ graph TD
 |---|---|
 | **Frontend** | Jinja2 HTML templates served by FastAPI. Vanilla JS + CSS (no build step). Three themes via CSS custom properties. |
 | **Backend** | FastAPI + Uvicorn. Handles page rendering, newsletter CRUD, Google OAuth, Gmail share, and the RAG chat endpoints. |
-| **Chatbot module** | LangChain LCEL pipeline: ChromaDB retriever → `ChatOpenAI` (gpt-4o-mini, temp 0.3) → `StrOutputParser`. Ingestion pipeline summarises each MongoDB section to 300-500 words then embeds via `langchain-chroma`. |
-| **Database** | MongoDB Atlas (async `pymongo`). Single `editions` collection with indexes on `edition_number` (unique) and `(status, created_at)`. |
-| **LLM** | OpenAI API — `gpt-4o-mini` by default. Used for newsletter section generation (structured JSON output) and chatbot answers. |
+| **Chatbot module** | LangChain pipeline: MongoDB Atlas Vector Search (MMR retriever, k=5, fetch_k=20) → `ChatOpenAI` (gpt-4o-mini, temp 0.3) → `StrOutputParser`. Ingestion reads full article text from MongoDB editions and embeds whole articles with contextual headers via `text-embedding-3-small`. |
+| **Database** | MongoDB Atlas (async `pymongo`). `editions` collection for newsletter content + `article_chunks` collection for vector search with 1536-dimension embeddings. |
+| **LLM** | OpenAI API — `gpt-4o-mini` for generation and chat answers, `text-embedding-3-small` for embeddings ($0.02/1M tokens). |
 | **Email** | Gmail API. Emails are sent using the logged-in user's own Google OAuth `access_token` (scope: `gmail.send`). |
-| **Vector store** | ChromaDB, persisted to `./chroma_data/`. Collection: `newsletter_sections`. |
-| **News sources** | RSS: TechCrunch, The Verge, VentureBeat, Ars Technica, WIRED, MIT News, Google AI Blog. |
+| **Vector store** | MongoDB Atlas Vector Search. Collection: `article_chunks`. Each document contains a contextual header + full article text, with only `edition_number` as metadata. MMR retrieval ensures diverse results. |
+| **News sources** | 20 RSS feeds organized into 4 section-specific pools: Trending Topics (TechCrunch, The Verge, WIRED, The Decoder, ZDNet), Top Developments (Anthropic, Google AI Blog, Hugging Face, Cohere, Mistral, Claude Blog), Corporate Tools (The New Stack, MarkTechPost, Ars Technica), Future Requirements (IEEE Spectrum, AISI, The Batch, TLDR AI, Anthropic Research, Ai2). |
 | **Job sources** | REST APIs: RemoteOK, Arbeitnow. Filtered by AI/ML keywords. |
 
 ---
@@ -133,8 +138,10 @@ graph TD
 | **RSS parsing** | feedparser | 6.0.x |
 | **Templating** | Jinja2 | 3.1.x |
 | **LLM provider** | OpenAI API | — |
-| **RAG framework** | LangChain + LangChain-OpenAI | ≥0.3.0 |
-| **Vector store** | ChromaDB + langchain-chroma | ≥0.5.0 / ≥0.2.0 |
+| **RAG framework** | LangChain + LangChain-OpenAI + LangChain-MongoDB | ≥0.3.0 |
+| **Vector store** | MongoDB Atlas Vector Search (langchain-mongodb) | ≥0.3.0 |
+| **Embedding model** | OpenAI text-embedding-3-small (1536 dims) | — |
+| **Article scraping** | trafilatura + BeautifulSoup4 | ≥1.6.0 / ≥4.12.0 |
 | **Session signing** | itsdangerous | 2.2.x |
 | **Retry logic** | tenacity | ≥8.2.0 |
 | **SSL (MongoDB)** | certifi | 2026.x |
@@ -167,32 +174,33 @@ AI-Newsletter/
 │   │   ├── share.py                # Email-to-self (/api/v1/share/send-to-self)
 │   │   └── pages.py                # Jinja2 HTML page routes (/, /archive, /edition/:id)
 │   └── services/
-│       ├── content_generator.py    # Orchestrates section-by-section LLM generation
+│       ├── content_generator.py    # Orchestrates section-by-section LLM generation + full-text scraping + cross-edition dedup
 │       ├── llm_client.py           # OpenAI API client with structured JSON output
-│       ├── news_scraper.py         # Async RSS feed scraper (7 feeds)
+│       ├── news_scraper.py         # Section-specific RSS feed pools (20 feeds across 4 pools)
 │       ├── jobs_scraper.py         # AI job listings scraper (RemoteOK + Arbeitnow)
 │       ├── jobs_service.py         # Formats jobs into newsletter section
 │       ├── newsletter_service.py   # MongoDB CRUD for editions (create, get, archive, search)
 │       ├── email_service.py        # Gmail API email builder + sender
 │       └── rate_limiter.py         # In-memory rate limiter for share endpoint
 │
-├── chatbot/                        # RAG chatbot module (embedded in backend)
-│   ├── main.py                     # Standalone chatbot entry point (optional)
+├── chatbot/                        # RAG chatbot module (runs as separate service on port 8001)
+│   ├── main.py                     # Standalone chatbot FastAPI entry point
 │   ├── config/
-│   │   └── settings.py             # Chatbot-specific settings (ChromaDB paths, ports)
+│   │   └── settings.py             # Chatbot settings (embedding model, max doc chars, vector index)
 │   ├── ingestion/
-│   │   ├── ingest.py               # Pipeline: MongoDB → summarise → embed in ChromaDB
-│   │   ├── embedder.py             # ChromaDB vector store initialisation + storage
-│   │   └── summarizer.py           # OpenAI section summarisation with tenacity retry
+│   │   ├── ingest.py               # Pipeline: MongoDB editions → create documents → embed in Atlas Vector Search
+│   │   ├── chunker.py              # Whole-article document creation with contextual headers (7000-char split threshold)
+│   │   ├── embedder.py             # MongoDB Atlas Vector Search store + OpenAI text-embedding-3-small
+│   │   └── article_scraper.py      # Article scraping utilities (trafilatura + BeautifulSoup)
 │   ├── retrieval/
-│   │   ├── chain.py                # LangChain LCEL chain (retriever → LLM → parser)
-│   │   └── vector_store.py         # ChromaDB retriever abstraction with metadata filtering
+│   │   ├── chain.py                # LangChain chain: MMR retriever → ChatOpenAI → StrOutputParser
+│   │   └── vector_store.py         # MMR retriever (k=5, fetch_k=20, lambda=0.7)
 │   ├── models/
-│   │   └── schemas.py              # ChatRequest, ChatResponse, IngestionResult schemas
+│   │   └── schemas.py              # ChatRequest, ChatResponse, SourceReference (edition_number only)
 │   ├── routers/
 │   │   └── chat.py                 # POST /api/v1/chat, POST /api/v1/ingest
 │   └── services/
-│       └── chat_service.py         # Chat orchestration, session management, temporal parsing
+│       └── chat_service.py         # Chat orchestration and session management
 │
 ├── frontend/                       # Jinja2 templates + static assets
 │   ├── templates/
@@ -337,7 +345,7 @@ All endpoints are served from the single backend process (default port **8000**)
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | `POST` | `/api/v1/chat` | — | Send a message; returns RAG-powered answer + source citations |
-| `POST` | `/api/v1/ingest` | `X-API-Key` header | Ingest newsletters into ChromaDB (`?full_reindex=false`) |
+| `POST` | `/api/v1/ingest` | `X-API-Key` header | Ingest newsletters into MongoDB Atlas Vector Search (`?full_reindex=false`) |
 
 ### Health
 
@@ -349,14 +357,25 @@ All endpoints are served from the single backend process (default port **8000**)
 
 ## 🤖 Chatbot Module
 
-The RAG chatbot is embedded directly into the main backend (no separate process needed). It is accessible via the floating chat icon on every page, or programmatically via the API.
+The RAG chatbot runs as a separate FastAPI service on port 8001. It is accessible via the floating chat icon on every page, or programmatically via the API.
 
 ### How it works
 
-1. **Ingestion** — When the backend starts, it auto-runs an incremental ingestion: each published edition in MongoDB is summarised per section (300–500 words using OpenAI), then embedded into a local ChromaDB collection (`newsletter_sections`). Only editions not yet indexed are processed.
-2. **Query** — When the user submits a question, the chatbot service parses any temporal references (e.g., "March", "this month"), builds an optional metadata filter, and retrieves the top 5 most relevant section summaries from ChromaDB.
-3. **Answer** — A LangChain LCEL chain passes the retrieved context, chat history (last 5 turns), and the question to `gpt-4o-mini`, which replies in a grounded, citation-aware style.
-4. **Citations** — The response includes source metadata (edition number, section title, publication date) rendered as clickable links in the chat widget.
+1. **Content Generation** — When a new edition is generated, the system scrapes full article text from each selected article's URL (using trafilatura + BeautifulSoup) and stores it in the `full_text` field on each ContentItem in MongoDB. Articles are sourced from 20 RSS feeds organized into 4 section-specific pools, with cross-edition URL deduplication ensuring every article is unique.
+2. **Ingestion** — The ingestion pipeline reads published editions from MongoDB. For each article, it takes the stored `full_text` (or falls back to the `summary`), prepends a contextual header (article title, source name, edition number), and embeds the complete document using `text-embedding-3-small` (1536 dimensions) into MongoDB Atlas Vector Search. Each document carries only `edition_number` as metadata. Articles under 7000 chars become a single document; longer articles are split at exact 7000-char boundaries.
+3. **Retrieval** — When a user asks a question, the system uses MMR (Maximal Marginal Relevance) retrieval (k=5, fetch_k=20, lambda=0.7) to find the 5 most relevant *and diverse* documents. MMR prevents returning 5 near-duplicate results about the same news story.
+4. **Answer** — A LangChain chain passes the retrieved context, chat history (last 5 turns), and the question to `gpt-4o-mini`, which replies with cited references to edition numbers and source names. Off-topic questions are politely declined; mixed queries get only the AI-relevant part answered.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|---|---|
+| Whole-article embedding (no chunking for articles <7K chars) | Eliminates redundant chunks competing for top-k slots; each article = 1 document |
+| Contextual headers baked into page_content | Article title, source, and edition are part of the embedding — enables queries like "what did TechCrunch report?" |
+| Only `edition_number` as metadata | 14 fields → 1. All context needed by the LLM is in the text itself |
+| MMR instead of hybrid search | Ensures diverse results without requiring a separate full-text search index |
+| Full-text scraping at generation time | Articles are scraped once when the edition is created, not at RAG ingestion time — eliminates scraping fragility |
+| Section-specific RSS feed pools | Each section draws from its own feeds — no article appears in multiple sections |
 
 ### Chat API
 
@@ -371,14 +390,10 @@ The RAG chatbot is embedded directly into the main backend (no separate process 
 **Response:**
 ```json
 {
-  "answer": "Based on Edition #3, the corporate AI tools section highlighted...",
+  "answer": "Based on Edition #12, the corporate AI tools section highlighted...",
   "sources": [
     {
-      "edition_id": "65f3a...",
-      "edition_number": 3,
-      "section_type": "corporate_tools",
-      "section_title": "Corporate AI Tools",
-      "published_at": "2026-03-15T00:00:00"
+      "edition_number": 12
     }
   ],
   "session_id": "uuid"
@@ -388,12 +403,12 @@ The RAG chatbot is embedded directly into the main backend (no separate process 
 ### Admin ingestion
 
 ```bash
-# Incremental (only new editions)
-curl -X POST http://localhost:8000/api/v1/ingest \
+# Incremental (only new editions, skips already-ingested)
+curl -X POST http://localhost:8001/api/v1/ingest \
   -H "X-API-Key: YOUR_ADMIN_API_KEY"
 
-# Full re-index (re-embed everything)
-curl -X POST "http://localhost:8000/api/v1/ingest?full_reindex=true" \
+# Full re-index (drops collection, recreates vector index, re-embeds editions 7+)
+curl -X POST "http://localhost:8001/api/v1/ingest?full_reindex=true" \
   -H "X-API-Key: YOUR_ADMIN_API_KEY"
 ```
 
@@ -407,7 +422,15 @@ curl -X POST "http://localhost:8000/api/v1/ingest?full_reindex=true" \
 
 ## 🗺️ Roadmap
 
-- [ ] Scheduled automatic newsletter generation (cron / APScheduler)
+- [x] Section-specific RSS feed pools (20 feeds across 4 pools)
+- [x] Cross-edition URL deduplication
+- [x] Full-text article scraping at generation time
+- [x] MongoDB Atlas Vector Search (replaced ChromaDB)
+- [x] Whole-article embedding with contextual headers
+- [x] MMR retrieval for diverse results
+- [x] text-embedding-3-small (5x cheaper than ada-002)
+- [ ] Scheduled automatic newsletter generation (cron / GitHub Actions)
+- [ ] Backfill full_text for existing editions 7-21 via batch scraping
 - [ ] Email subscription list with opt-in/opt-out management
 - [ ] Multiple LLM provider support (Gemini, Claude, local models)
 - [ ] Webhook or push notifications when a new edition is published
@@ -445,7 +468,7 @@ This project is currently unlicensed. Consider adding an [MIT](https://opensourc
 - [FastAPI](https://fastapi.tiangolo.com/) — high-performance Python web framework
 - [OpenAI](https://openai.com/) — LLM API powering content generation and chatbot answers
 - [LangChain](https://www.langchain.com/) — RAG framework and LCEL chain composition
-- [ChromaDB](https://www.trychroma.com/) — local vector store for semantic search
+- [MongoDB Atlas Vector Search](https://www.mongodb.com/products/platform/atlas-vector-search) — cloud-native vector search with MMR retrieval\n- [trafilatura](https://trafilatura.readthedocs.io/) — web article text extraction
 - [MongoDB Atlas](https://www.mongodb.com/atlas) — managed cloud database
 - [Pydantic](https://docs.pydantic.dev/) — data validation and settings management
 - [feedparser](https://feedparser.readthedocs.io/) — RSS feed parsing
